@@ -5,6 +5,7 @@ import {
   X, Download, Heart, Clock, Package, ExternalLink, ChevronDown,
   CheckCircle, Tag, Calendar, AlertTriangle, Images, Loader2, Globe, Search,
   Bug, Code2, BookOpen, MessageCircle, Link as LinkIcon,
+  Crown, Users, Building2, Archive,
 } from 'lucide-react';
 import type { SearchHit, Version, Dependency } from '../types/modrinth';
 import { getProjectVersions, formatDownloads, formatDate, numToHex } from '../api/modrinth';
@@ -51,6 +52,19 @@ function SectionTitle({ icon, children }: { icon: React.ReactNode; children: Rea
 interface DepInfo {
   dep: Dependency;
   project: { id: string; slug: string; title: string; icon_url: string | null; project_type: string };
+}
+
+interface TeamMember {
+  user: { id: string; username: string; avatar_url: string | null; bio: string | null };
+  role: string;
+  accepted: boolean;
+  ordering: number;
+}
+
+interface DevProject {
+  id: string; slug: string; title: string; icon_url: string | null;
+  project_type: string; downloads: number; follows: number;
+  status: string; date_modified: string;
 }
 
 function DepCard({ info }: { info: DepInfo }) {
@@ -132,7 +146,41 @@ function IconBtn({ onClick, disabled, title, children }: {
   );
 }
 
+function DevProjectCard({ p, onClose }: { p: DevProject; onClose: () => void }) {
+  const navigate = useNavigate();
+  const [err, setErr] = useState(false);
+  const archived = p.status === 'archived';
+  return (
+    <button
+      onClick={() => { onClose(); navigate(`/mod/${p.slug}`); }}
+      style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '9px 12px', borderRadius: '10px', background: 'var(--card)', border: '1px solid var(--card-border)', cursor: 'pointer', textAlign: 'left', transition: 'all 0.13s', width: '100%', opacity: archived ? 0.7 : 1 }}
+      onMouseEnter={e => { (e.currentTarget as HTMLElement).style.borderColor = 'var(--card-border-hover)'; (e.currentTarget as HTMLElement).style.background = 'var(--card-hover)'; }}
+      onMouseLeave={e => { (e.currentTarget as HTMLElement).style.borderColor = 'var(--card-border)'; (e.currentTarget as HTMLElement).style.background = 'var(--card)'; }}
+    >
+      <div style={{ width: '32px', height: '32px', borderRadius: '8px', overflow: 'hidden', flexShrink: 0, background: 'var(--bg-2)', border: '1px solid var(--card-border)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+        {p.icon_url && !err
+          ? <img src={p.icon_url} alt={p.title} onError={() => setErr(true)} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+          : <Package size={14} color="var(--text-3)" />}
+      </div>
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+          <span style={{ fontSize: '13px', fontWeight: 600, color: 'var(--text)', fontFamily: 'Instrument Sans, sans-serif', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{p.title}</span>
+          {archived && (
+            <span style={{ display: 'flex', alignItems: 'center', gap: '3px', fontSize: '10px', color: 'var(--text-3)', background: 'var(--bg-2)', border: '1px solid var(--card-border)', padding: '1px 6px', borderRadius: '4px', flexShrink: 0, fontFamily: 'JetBrains Mono, monospace', fontWeight: 600 }}>
+              <Archive size={9} /> archived
+            </span>
+          )}
+        </div>
+        <div style={{ fontSize: '10px', color: 'var(--text-3)', fontFamily: 'JetBrains Mono, monospace', marginTop: '2px' }}>
+          {formatDownloads(p.downloads)} dl · <span style={{ textTransform: 'capitalize' }}>{p.project_type}</span>
+        </div>
+      </div>
+    </button>
+  );
+}
+
 export function ModDetail({ hit, onClose, contextType, mode = 'modal' }: ModDetailProps) {
+  const navigate = useNavigate();
   const [versions, setVersions]       = useState<Version[]>([]);
   const [projectBody, setProjectBody] = useState<string | null>(null);
   const [loading, setLoading]         = useState(true);
@@ -159,6 +207,9 @@ export function ModDetail({ hit, onClose, contextType, mode = 'modal' }: ModDeta
   const [vTabTypes, setVTabTypes]   = useState(['release', 'beta', 'alpha']);
   const [vTabSearch, setVTabSearch] = useState('');
 
+  const [teamMembers, setTeamMembers]   = useState<TeamMember[]>([]);
+  const [projectOrgId, setProjectOrgId] = useState<string | null>(null);
+
   const accentHex = numToHex(hit.color) || '#1bca8e';
   const installType = (contextType && contextType !== 'all' && contextType !== 'server')
     ? contextType : hit.project_type;
@@ -169,6 +220,7 @@ export function ModDetail({ hit, onClose, contextType, mode = 'modal' }: ModDeta
     setSelectedMcVersion(''); setSelectedLoader('');
     setProjectBody(null); setTranslatedDesc(null); setTranslatedBody(null);
     setDeps([]); setGalleryMeta([]); setProjectLinks(null);
+    setTeamMembers([]); setProjectOrgId(null);
 
     Promise.all([
       getProjectVersions(hit.slug),
@@ -176,12 +228,16 @@ export function ModDetail({ hit, onClose, contextType, mode = 'modal' }: ModDeta
         body: r.data.body as string | null,
         gallery: (r.data.gallery ?? []) as { url: string; raw_url: string; title: string | null; description: string | null }[],
         links: { issues: r.data.issues_url ?? null, source: r.data.source_url ?? null, wiki: r.data.wiki_url ?? null, discord: r.data.discord_url ?? null, donations: r.data.donation_urls ?? [] },
-      })).catch(() => ({ body: null, gallery: [], links: null })),
-    ]).then(([vers, { body, gallery: gMeta, links }]) => {
+        organization: (r.data.organization ?? null) as string | null,
+      })).catch(() => ({ body: null, gallery: [], links: null, organization: null })),
+      modrinthV2.get(`/project/${hit.slug}/members`).then(r => r.data as TeamMember[]).catch(() => [] as TeamMember[]),
+    ]).then(([vers, { body, gallery: gMeta, links, organization }, members]) => {
       setVersions(vers);
       setProjectBody(body);
       setGalleryMeta(gMeta);
       setProjectLinks(links);
+      setProjectOrgId(organization);
+      setTeamMembers(members.filter(m => m.accepted));
 
       const seen = new Set<string>();
       const uniqueDeps: Dependency[] = [];
@@ -564,6 +620,79 @@ export function ModDetail({ hit, onClose, contextType, mode = 'modal' }: ModDeta
       </div>
     </div>
   ) : null;
+
+  const sortedMembers = [...teamMembers].sort((a, b) => {
+    const aOwner = a.role.toLowerCase() === 'owner';
+    const bOwner = b.role.toLowerCase() === 'owner';
+    if (aOwner && !bOwner) return -1;
+    if (!aOwner && bOwner) return 1;
+    return a.ordering - b.ordering;
+  });
+
+  const developersSection = (teamMembers.length > 0 || projectOrgId) ? (
+    <div style={{
+      background: 'var(--card)', border: '1px solid var(--card-border)',
+      borderRadius: '14px', padding: '14px 16px', marginBottom: '18px',
+    }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '10px' }}>
+        <Users size={13} color="var(--text-3)" />
+        <span style={{ fontSize: '11px', fontWeight: 700, letterSpacing: '0.07em', textTransform: 'uppercase', color: 'var(--text-3)', fontFamily: 'JetBrains Mono, monospace' }}>Developers</span>
+      </div>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
+        {projectOrgId && (
+          <button
+            onClick={() => navigate(`/org/${projectOrgId}`)}
+            style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '8px 10px', borderRadius: '8px', background: 'transparent', border: 'none', cursor: 'pointer', textAlign: 'left', transition: 'background 0.13s', width: '100%' }}
+            onMouseEnter={e => { (e.currentTarget as HTMLElement).style.background = 'var(--card-hover)'; }}
+            onMouseLeave={e => { (e.currentTarget as HTMLElement).style.background = 'transparent'; }}
+          >
+            <div style={{ width: '28px', height: '28px', borderRadius: '8px', flexShrink: 0, background: `${accentHex}14`, border: `1px solid ${accentHex}28`, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+              <Building2 size={13} color={accentHex} />
+            </div>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{ fontSize: '13px', fontWeight: 600, color: 'var(--text)', fontFamily: 'Instrument Sans, sans-serif', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                Organization
+              </div>
+              <div style={{ fontSize: '11px', color: 'var(--text-3)', fontFamily: 'JetBrains Mono, monospace' }}>Owner</div>
+            </div>
+            <ExternalLink size={11} color="var(--text-3)" style={{ flexShrink: 0 }} />
+          </button>
+        )}
+        {sortedMembers.map(member => {
+          const isOwner = member.role.toLowerCase() === 'owner';
+          return (
+            <button
+              key={member.user.id}
+              onClick={() => navigate(`/user/${member.user.username}`)}
+              style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '8px 10px', borderRadius: '8px', background: 'transparent', border: 'none', cursor: 'pointer', textAlign: 'left', transition: 'background 0.13s', width: '100%' }}
+              onMouseEnter={e => { (e.currentTarget as HTMLElement).style.background = 'var(--card-hover)'; }}
+              onMouseLeave={e => { (e.currentTarget as HTMLElement).style.background = 'transparent'; }}
+            >
+              <div style={{ width: '28px', height: '28px', borderRadius: '50%', overflow: 'hidden', flexShrink: 0, background: 'var(--bg-2)', border: '1px solid var(--card-border)' }}>
+                {member.user.avatar_url
+                  ? <img src={member.user.avatar_url} alt={member.user.username} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                  : <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '11px', color: 'var(--text-3)', fontWeight: 700 }}>{member.user.username[0]?.toUpperCase()}</div>
+                }
+              </div>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
+                  <span style={{ fontSize: '13px', fontWeight: 600, color: 'var(--text)', fontFamily: 'Instrument Sans, sans-serif', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                    {member.user.username}
+                  </span>
+                  {isOwner && !projectOrgId && <Crown size={11} color="#f59e0b" title="Owner" style={{ flexShrink: 0 }} />}
+                </div>
+                <div style={{ fontSize: '11px', color: 'var(--text-3)', fontFamily: 'JetBrains Mono, monospace', textTransform: 'capitalize' }}>
+                  {member.role}
+                </div>
+              </div>
+              <ExternalLink size={11} color="var(--text-3)" style={{ flexShrink: 0 }} />
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  ) : null;
+
 
   const categoriesSection = hit.display_categories?.length > 0 ? (
     <div style={{ marginBottom: '18px' }}>
@@ -979,6 +1108,7 @@ export function ModDetail({ hit, onClose, contextType, mode = 'modal' }: ModDeta
         {statsSection}
         {downloadSection}
         {linksSection}
+        {developersSection}
         {dependenciesSection}
         {categoriesSection}
         <a href={`https://modrinth.com/${hit.project_type}/${hit.slug}`} target="_blank" rel="noopener noreferrer"

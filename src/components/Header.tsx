@@ -286,7 +286,7 @@ export function Header() {
               (e.currentTarget as HTMLElement).style.borderColor = 'var(--card-border)';
             }}
           >
-            <img src="/modrinth.ico" width="14" height="14" alt="" style={{ display: 'block', flexShrink: 0 }} />
+            <img src="modrinth.ico" width="14" height="14" alt="" style={{ display: 'block', flexShrink: 0 }} />
             Modrinth
           </a>
         </div>

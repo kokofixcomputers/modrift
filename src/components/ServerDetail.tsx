@@ -72,7 +72,7 @@ function SectionTitle({ icon, label }: { icon: React.ReactNode; label: string })
       {icon}
       <span style={{
         fontSize: '11px', fontWeight: 600, letterSpacing: '0.06em',
-        textTransform: 'uppercase', fontFamily: 'DM Mono, monospace',
+        textTransform: 'uppercase', fontFamily: 'JetBrains Mono, monospace',
       }}>
         {label}
       </span>
@@ -157,7 +157,7 @@ export function ServerDetail({ server, onClose }: ServerDetailProps) {
         marginTop: '10px', padding: '5px 10px',
         background: 'none', border: '1px solid var(--border)',
         borderRadius: '8px', cursor: 'pointer', fontSize: '12px',
-        color: 'var(--text-muted)', fontFamily: 'DM Sans, sans-serif',
+        color: 'var(--text-muted)', fontFamily: 'Instrument Sans, sans-serif',
         transition: 'all 0.15s',
       }}
       onMouseEnter={e => {
@@ -242,7 +242,7 @@ export function ServerDetail({ server, onClose }: ServerDetailProps) {
           borderRadius: '12px', padding: '12px', textAlign: 'center',
         }}>
           <div style={{ color: accent, marginBottom: '4px', display: 'flex', justifyContent: 'center' }}>{stat.icon}</div>
-          <div style={{ fontSize: '16px', fontWeight: 700, color: 'var(--text-primary)', fontFamily: 'Syne, sans-serif' }}>{stat.value}</div>
+          <div style={{ fontSize: '16px', fontWeight: 700, color: 'var(--text-primary)', fontFamily: 'Instrument Sans, sans-serif' }}>{stat.value}</div>
           <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '2px' }}>{stat.label}</div>
         </div>
       ))}
@@ -260,7 +260,7 @@ export function ServerDetail({ server, onClose }: ServerDetailProps) {
       <SectionTitle icon={<Wifi size={13} />} label="Server Address" />
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '8px' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-          <span style={{ fontFamily: 'DM Mono, monospace', fontSize: '14px', fontWeight: 600, color: 'var(--text-primary)' }}>
+          <span style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: '14px', fontWeight: 600, color: 'var(--text-primary)' }}>
             {javaServer.address}
           </span>
           <button
@@ -273,12 +273,12 @@ export function ServerDetail({ server, onClose }: ServerDetailProps) {
         </div>
         {isOnline && pingData && (
           <div style={{ display: 'flex', gap: '12px' }}>
-            <span style={{ fontSize: '12px', color: 'var(--text-muted)', fontFamily: 'DM Mono, monospace' }}>
+            <span style={{ fontSize: '12px', color: 'var(--text-muted)', fontFamily: 'JetBrains Mono, monospace' }}>
               {pingData.players_online}/{pingData.players_max} players
             </span>
             {pingData.version_name && (
               <span style={{
-                fontSize: '11px', color: 'var(--text-muted)', fontFamily: 'DM Mono, monospace',
+                fontSize: '11px', color: 'var(--text-muted)', fontFamily: 'JetBrains Mono, monospace',
                 overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '140px', whiteSpace: 'nowrap',
               }}>
                 {pingData.version_name}
@@ -318,10 +318,10 @@ export function ServerDetail({ server, onClose }: ServerDetailProps) {
           )}
         </div>
         <div style={{ flex: 1, minWidth: 0 }}>
-          <div style={{ fontSize: '13px', fontWeight: 700, color: 'var(--text-primary)', fontFamily: 'Syne, sans-serif', marginBottom: '2px' }}>
+          <div style={{ fontSize: '13px', fontWeight: 700, color: 'var(--text-primary)', fontFamily: 'Instrument Sans, sans-serif', marginBottom: '2px' }}>
             {content.project_name}
           </div>
-          <div style={{ fontSize: '11px', color: 'var(--text-muted)', fontFamily: 'DM Mono, monospace', textTransform: 'capitalize' }}>
+          <div style={{ fontSize: '11px', color: 'var(--text-muted)', fontFamily: 'JetBrains Mono, monospace', textTransform: 'capitalize' }}>
             {content.kind}
           </div>
         </div>
@@ -335,7 +335,7 @@ export function ServerDetail({ server, onClose }: ServerDetailProps) {
             marginTop: '8px', padding: '10px', width: '100%',
             background: 'linear-gradient(135deg, #1bca8e, #0ea5e9)',
             color: 'white', borderRadius: '10px', border: 'none',
-            fontSize: '13px', fontWeight: 700, fontFamily: 'Syne, sans-serif',
+            fontSize: '13px', fontWeight: 700, fontFamily: 'Instrument Sans, sans-serif',
             boxShadow: '0 2px 12px rgba(27,202,142,0.35)',
             transition: 'all 0.15s ease', cursor: 'pointer',
           }}
@@ -384,7 +384,7 @@ export function ServerDetail({ server, onClose }: ServerDetailProps) {
             <span style={{
               fontSize: '11px', fontWeight: 600, letterSpacing: '0.04em',
               textTransform: 'capitalize', color: 'var(--text-muted)',
-              fontFamily: 'DM Mono, monospace', flexShrink: 0, minWidth: '52px',
+              fontFamily: 'JetBrains Mono, monospace', flexShrink: 0, minWidth: '52px',
             }}>
               {key}
             </span>
@@ -393,7 +393,7 @@ export function ServerDetail({ server, onClose }: ServerDetailProps) {
               style={{
                 flex: 1, fontSize: '12px', color: '#0ea5e9', textDecoration: 'none',
                 overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
-                fontFamily: 'DM Mono, monospace',
+                fontFamily: 'JetBrains Mono, monospace',
               }}
               onMouseEnter={e => (e.currentTarget as HTMLElement).style.textDecoration = 'underline'}
               onMouseLeave={e => (e.currentTarget as HTMLElement).style.textDecoration = 'none'}
@@ -423,8 +423,8 @@ export function ServerDetail({ server, onClose }: ServerDetailProps) {
   const header = (
     <div style={{
       position: 'sticky', top: 0,
-      background: 'rgba(255,255,255,0.92)', backdropFilter: 'blur(20px)',
-      borderBottom: '1px solid var(--border)', padding: '18px 22px',
+      background: 'rgba(10,11,18,0.9)', backdropFilter: 'blur(20px)',
+      borderBottom: '1px solid rgba(255,255,255,0.08)', padding: '18px 22px',
       display: 'flex', alignItems: 'center', gap: '14px',
       zIndex: 10, flexShrink: 0,
     }}>
@@ -444,20 +444,20 @@ export function ServerDetail({ server, onClose }: ServerDetailProps) {
       </div>
       <div style={{ flex: 1, minWidth: 0 }}>
         <h2 style={{
-          fontFamily: 'Syne, sans-serif', fontSize: '17px', fontWeight: 800,
+          fontFamily: 'Instrument Sans, sans-serif', fontSize: '17px', fontWeight: 800,
           color: 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
         }}>
           {server.title}
         </h2>
         <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginTop: '2px' }}>
           {loading ? (
-            <span style={{ fontSize: '11px', color: 'var(--text-muted)', fontFamily: 'DM Mono, monospace' }}>Checking...</span>
+            <span style={{ fontSize: '11px', color: 'var(--text-muted)', fontFamily: 'JetBrains Mono, monospace' }}>Checking...</span>
           ) : isOnline ? (
             <span style={{
               display: 'inline-flex', alignItems: 'center', gap: '4px',
               fontSize: '11px', fontWeight: 600, color: '#1bca8e',
               background: 'rgba(27,202,142,0.1)', border: '1px solid rgba(27,202,142,0.25)',
-              padding: '1px 8px', borderRadius: '20px', fontFamily: 'DM Mono, monospace',
+              padding: '1px 8px', borderRadius: '20px', fontFamily: 'JetBrains Mono, monospace',
             }}>
               <span style={{ width: '5px', height: '5px', borderRadius: '50%', background: '#1bca8e', display: 'inline-block' }} />
               Online · {formatNum(pingData!.players_online)}/{formatNum(pingData!.players_max)} players
@@ -467,7 +467,7 @@ export function ServerDetail({ server, onClose }: ServerDetailProps) {
               display: 'inline-flex', alignItems: 'center', gap: '4px',
               fontSize: '11px', fontWeight: 600, color: '#ef4444',
               background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.2)',
-              padding: '1px 8px', borderRadius: '20px', fontFamily: 'DM Mono, monospace',
+              padding: '1px 8px', borderRadius: '20px', fontFamily: 'JetBrains Mono, monospace',
             }}>
               <span style={{ width: '5px', height: '5px', borderRadius: '50%', background: '#ef4444', display: 'inline-block' }} />
               Offline
@@ -508,7 +508,7 @@ export function ServerDetail({ server, onClose }: ServerDetailProps) {
   );
 
   const footer = (
-    <div style={{ padding: '16px 22px', borderTop: '1px solid var(--border)', display: 'flex', gap: '10px', flexShrink: 0 }}>
+    <div style={{ padding: '16px 22px', borderTop: '1px solid rgba(255,255,255,0.08)', display: 'flex', gap: '10px', flexShrink: 0 }}>
       <a
         href={`https://modrinth.com/server/${server.slug}`}
         target="_blank" rel="noopener noreferrer"
@@ -561,10 +561,10 @@ export function ServerDetail({ server, onClose }: ServerDetailProps) {
             width: '100%', maxWidth: fullscreen ? '100%' : '480px',
             height: fullscreen ? '100vh' : 'calc(100vh - 32px)',
             overflowY: fullscreen ? 'hidden' : 'auto',
-            background: 'rgba(255,255,255,0.97)', backdropFilter: 'blur(24px)',
+            background: 'rgba(10,11,18,0.97)', backdropFilter: 'blur(28px) saturate(160%)',
             borderRadius: fullscreen ? '0' : '22px',
-            border: '1px solid rgba(255,255,255,1)',
-            boxShadow: '0 24px 80px rgba(0,0,0,0.16), 0 8px 24px rgba(0,0,0,0.08)',
+            border: '1px solid rgba(255,255,255,0.1)',
+            boxShadow: '0 24px 80px rgba(0,0,0,0.7), inset 0 1px 0 rgba(255,255,255,0.07)',
             display: 'flex', flexDirection: 'column',
           }}
         >
@@ -606,7 +606,7 @@ export function ServerDetail({ server, onClose }: ServerDetailProps) {
                   {!loading && full?.description && full.description.trim() ? (
                     <>
                       <h3 style={{
-                        fontFamily: 'Syne, sans-serif', fontSize: '13px', fontWeight: 700,
+                        fontFamily: 'Instrument Sans, sans-serif', fontSize: '13px', fontWeight: 700,
                         color: 'var(--text-muted)', letterSpacing: '0.07em', textTransform: 'uppercase',
                         marginBottom: '16px',
                       }}>
@@ -628,7 +628,7 @@ export function ServerDetail({ server, onClose }: ServerDetailProps) {
               {/* Right: stats + address + modpack + categories + links */}
               <div style={{
                 width: '400px', flexShrink: 0, overflowY: 'auto', padding: '22px',
-                background: 'rgba(248,250,252,0.8)',
+                background: 'rgba(7,8,13,0.4)',
               }}>
                 {statsSection}
                 {addressSection}
@@ -664,7 +664,7 @@ export function ServerDetail({ server, onClose }: ServerDetailProps) {
               {/* Full about / markdown */}
               {!loading && full?.description && full.description.trim() ? (
                 <div style={{
-                  background: 'white', border: '1px solid var(--border)',
+                  background: 'var(--card)', border: '1px solid var(--card-border)',
                   borderRadius: '14px', padding: '16px', marginBottom: '22px',
                 }}>
                   <SectionTitle icon={<Globe size={13} />} label="About" />

@@ -1,69 +1,53 @@
 import { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Rocket, Download, X, ExternalLink } from 'lucide-react';
+import { Rocket, Download, X } from 'lucide-react';
 
 function AppNotFoundModal({ onClose }: { onClose: () => void }) {
   useEffect(() => {
-    const handler = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
-    window.addEventListener('keydown', handler);
-    return () => window.removeEventListener('keydown', handler);
+    const h = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
+    window.addEventListener('keydown', h);
+    return () => window.removeEventListener('keydown', h);
   }, [onClose]);
 
   return (
     <motion.div
-      initial={{ opacity: 0 }}
-      animate={{ opacity: 1 }}
-      exit={{ opacity: 0 }}
-      transition={{ duration: 0.15 }}
+      initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.15 }}
       onClick={onClose}
-      style={{
-        position: 'fixed', inset: 0,
-        background: 'rgba(15,23,42,0.5)', backdropFilter: 'blur(6px)',
-        zIndex: 300,
-        display: 'flex', alignItems: 'center', justifyContent: 'center',
-        padding: '20px',
-      }}
+      style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.7)', backdropFilter: 'blur(8px)', zIndex: 300, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '20px' }}
     >
       <motion.div
-        initial={{ scale: 0.93, opacity: 0, y: 12 }}
+        initial={{ scale: 0.93, opacity: 0, y: 10 }}
         animate={{ scale: 1, opacity: 1, y: 0 }}
-        exit={{ scale: 0.93, opacity: 0, y: 12 }}
+        exit={{ scale: 0.93, opacity: 0, y: 10 }}
         transition={{ duration: 0.2, ease: [0.4, 0, 0.2, 1] }}
         onClick={e => e.stopPropagation()}
         style={{
-          background: 'white', borderRadius: '20px',
-          boxShadow: '0 24px 80px rgba(0,0,0,0.18), 0 8px 24px rgba(0,0,0,0.1)',
-          border: '1px solid rgba(255,255,255,0.9)',
-          maxWidth: '420px', width: '100%',
+          background: 'rgba(13,15,24,0.98)', backdropFilter: 'blur(24px)',
+          borderRadius: '18px', maxWidth: '400px', width: '100%',
           overflow: 'hidden',
+          border: '1px solid rgba(255,255,255,0.1)',
+          boxShadow: '0 24px 80px rgba(0,0,0,0.8), inset 0 1px 0 rgba(255,255,255,0.07)',
         }}
       >
-        {/* Top accent */}
-        <div style={{ height: '4px', background: 'linear-gradient(90deg, #1bca8e, #0ea5e9)' }} />
+        {/* Accent strip */}
+        <div style={{ height: '3px', background: 'linear-gradient(90deg, #1bca8e, #0ea5e9)' }} />
 
-        <div style={{ padding: '28px 28px 24px' }}>
+        <div style={{ padding: '24px 24px 20px' }}>
           {/* Header */}
-          <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: '20px' }}>
+          <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: '16px' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
               <div style={{
-                width: '44px', height: '44px', borderRadius: '12px', flexShrink: 0,
-                background: 'linear-gradient(135deg, rgba(27,202,142,0.15), rgba(14,165,233,0.15))',
-                border: '1px solid rgba(27,202,142,0.25)',
+                width: '40px', height: '40px', borderRadius: '11px', flexShrink: 0,
+                background: 'rgba(27,202,142,0.12)', border: '1px solid rgba(27,202,142,0.22)',
                 display: 'flex', alignItems: 'center', justifyContent: 'center',
               }}>
-                <Download size={20} color="#1bca8e" />
+                <Download size={18} color="#1bca8e" />
               </div>
               <div>
-                <h3 style={{
-                  fontFamily: 'Syne, sans-serif', fontSize: '16px', fontWeight: 800,
-                  color: 'var(--text-primary)', margin: 0,
-                }}>
+                <h3 style={{ fontFamily: 'Instrument Sans, sans-serif', fontSize: '15px', fontWeight: 700, color: 'rgba(228,231,242,0.94)', margin: 0 }}>
                   Modrinth App not found
                 </h3>
-                <p style={{
-                  fontSize: '12px', color: 'var(--text-muted)',
-                  fontFamily: 'DM Mono, monospace', margin: '3px 0 0',
-                }}>
+                <p style={{ fontSize: '11px', color: 'rgba(228,231,242,0.3)', fontFamily: 'JetBrains Mono, monospace', margin: '3px 0 0' }}>
                   Required for one-click install
                 </p>
               </div>
@@ -71,84 +55,55 @@ function AppNotFoundModal({ onClose }: { onClose: () => void }) {
             <button
               onClick={onClose}
               style={{
-                width: '28px', height: '28px', borderRadius: '50%',
-                background: 'var(--surface)', border: '1px solid var(--border)',
+                width: '26px', height: '26px', borderRadius: '50%',
+                background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.1)',
                 display: 'flex', alignItems: 'center', justifyContent: 'center',
                 cursor: 'pointer', flexShrink: 0,
               }}
             >
-              <X size={13} color="var(--text-secondary)" />
+              <X size={12} color="rgba(228,231,242,0.3)" />
             </button>
           </div>
 
-          {/* Body */}
-          <p style={{
-            fontSize: '14px', color: 'var(--text-secondary)', lineHeight: 1.65,
-            margin: '0 0 24px',
-          }}>
-            The <strong style={{ color: 'var(--text-primary)' }}>Modrinth App</strong> wasn't detected on your system.
+          <p style={{ fontSize: '13px', color: 'rgba(228,231,242,0.52)', lineHeight: 1.65, margin: '0 0 20px' }}>
+            The <strong style={{ color: 'rgba(228,231,242,0.85)' }}>Modrinth App</strong> wasn't detected.
             Install it to get one-click mod installs, automatic updates, and a built-in launcher.
           </p>
 
-          {/* Actions */}
-          <div style={{ display: 'flex', gap: '10px' }}>
+          <div style={{ display: 'flex', gap: '8px' }}>
             <a
-              href="https://modrinth.com/app"
-              target="_blank"
-              rel="noopener noreferrer"
+              href="https://modrinth.com/app" target="_blank" rel="noopener noreferrer"
               style={{
                 flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px',
-                padding: '11px',
-                background: 'linear-gradient(135deg, #1bca8e, #0ea5e9)',
-                color: 'white', borderRadius: '12px', textDecoration: 'none',
-                fontSize: '13px', fontWeight: 700, fontFamily: 'Syne, sans-serif',
+                padding: '10px', background: 'linear-gradient(135deg, #1bca8e, #0ea5e9)',
+                color: 'white', borderRadius: '10px', textDecoration: 'none',
+                fontSize: '12px', fontWeight: 700, fontFamily: 'Instrument Sans, sans-serif',
                 boxShadow: '0 2px 12px rgba(27,202,142,0.3)',
-                transition: 'filter 0.15s, transform 0.15s',
+                transition: 'filter 0.14s',
               }}
-              onMouseEnter={e => {
-                (e.currentTarget as HTMLElement).style.filter = 'brightness(1.08)';
-                (e.currentTarget as HTMLElement).style.transform = 'translateY(-1px)';
-              }}
-              onMouseLeave={e => {
-                (e.currentTarget as HTMLElement).style.filter = '';
-                (e.currentTarget as HTMLElement).style.transform = '';
-              }}
+              onMouseEnter={e => (e.currentTarget as HTMLElement).style.filter = 'brightness(1.1)'}
+              onMouseLeave={e => (e.currentTarget as HTMLElement).style.filter = ''}
             >
-              <Download size={13} />
-              Download Modrinth App
+              <Download size={12} /> Download Modrinth App
             </a>
             <button
               onClick={onClose}
               style={{
-                padding: '11px 18px',
-                background: 'var(--off-white)', border: '1px solid var(--border)',
-                borderRadius: '12px', cursor: 'pointer',
-                fontSize: '13px', color: 'var(--text-secondary)', fontFamily: 'DM Sans, sans-serif',
-                transition: 'all 0.15s',
+                padding: '10px 16px', background: 'rgba(255,255,255,0.06)',
+                border: '1px solid rgba(255,255,255,0.1)', borderRadius: '10px',
+                cursor: 'pointer', fontSize: '12px', color: 'rgba(228,231,242,0.52)',
+                fontFamily: 'Instrument Sans, sans-serif', transition: 'all 0.14s',
               }}
-              onMouseEnter={e => {
-                (e.currentTarget as HTMLElement).style.background = 'var(--surface-hover)';
-                (e.currentTarget as HTMLElement).style.color = 'var(--text-primary)';
-              }}
-              onMouseLeave={e => {
-                (e.currentTarget as HTMLElement).style.background = 'var(--off-white)';
-                (e.currentTarget as HTMLElement).style.color = 'var(--text-secondary)';
-              }}
+              onMouseEnter={e => { (e.currentTarget as HTMLElement).style.background = 'rgba(255,255,255,0.1)'; (e.currentTarget as HTMLElement).style.color = 'rgba(228,231,242,0.85)'; }}
+              onMouseLeave={e => { (e.currentTarget as HTMLElement).style.background = 'rgba(255,255,255,0.06)'; (e.currentTarget as HTMLElement).style.color = 'rgba(228,231,242,0.52)'; }}
             >
               Cancel
             </button>
           </div>
 
-          {/* Already have it hint */}
-          <p style={{
-            marginTop: '16px', fontSize: '11px', color: 'var(--text-muted)',
-            textAlign: 'center', fontFamily: 'DM Mono, monospace',
-          }}>
+          <p style={{ marginTop: '14px', fontSize: '10px', color: 'rgba(228,231,242,0.25)', textAlign: 'center', fontFamily: 'JetBrains Mono, monospace' }}>
             Already installed?{' '}
-            <button
-              onClick={onClose}
-              style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#1bca8e', fontSize: '11px', fontFamily: 'DM Mono, monospace', padding: 0 }}
-            >
+            <button onClick={onClose} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#1bca8e', fontSize: '10px', fontFamily: 'JetBrains Mono, monospace', padding: 0 }}>
               Try again
             </button>
           </p>
@@ -176,18 +131,13 @@ export function ModrinthInstallButton({
   const [showPrompt, setShowPrompt] = useState(false);
   const trying = useRef(false);
   const opened = useRef(false);
-  const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const timer  = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
-    const markOpened = () => {
-      if (!trying.current || opened.current) return;
-      opened.current = true;
-      if (timer.current) clearTimeout(timer.current);
-    };
-
-    const onBlur = () => markOpened();
+    const markOpened = () => { if (!trying.current || opened.current) return; opened.current = true; if (timer.current) clearTimeout(timer.current); };
+    const onBlur       = () => markOpened();
     const onVisibility = () => { if (document.visibilityState === 'hidden') markOpened(); };
-    const onFocus = () => { if (!trying.current) opened.current = false; };
+    const onFocus      = () => { if (!trying.current) opened.current = false; };
 
     window.addEventListener('blur', onBlur);
     document.addEventListener('visibilitychange', onVisibility);
@@ -202,9 +152,7 @@ export function ModrinthInstallButton({
   const handleClick = () => {
     trying.current = true;
     opened.current = false;
-
     window.location.href = href;
-
     timer.current = setTimeout(() => {
       if (!opened.current) setShowPrompt(true);
       trying.current = false;
@@ -213,16 +161,10 @@ export function ModrinthInstallButton({
 
   return (
     <>
-      <button
-        onClick={handleClick}
-        style={style}
-        onMouseEnter={onMouseEnter}
-        onMouseLeave={onMouseLeave}
-      >
-        <Rocket size={13} />
+      <button onClick={handleClick} style={style} onMouseEnter={onMouseEnter} onMouseLeave={onMouseLeave}>
+        <Rocket size={12} />
         {label}
       </button>
-
       <AnimatePresence>
         {showPrompt && <AppNotFoundModal onClose={() => setShowPrompt(false)} />}
       </AnimatePresence>

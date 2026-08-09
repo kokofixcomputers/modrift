@@ -35,7 +35,6 @@ export function Dropdown({ options, value, onChange, placeholder, multiple = fal
     o.label.toLowerCase().includes(search.toLowerCase())
   );
 
-  // Position the menu based on the trigger's bounding rect
   const updateMenuPosition = useCallback(() => {
     if (!triggerRef.current) return;
     const rect = triggerRef.current.getBoundingClientRect();
@@ -61,7 +60,6 @@ export function Dropdown({ options, value, onChange, placeholder, multiple = fal
     }
   }, [open, updateMenuPosition, searchable]);
 
-  // Reposition on scroll/resize
   useEffect(() => {
     if (!open) return;
     const handler = () => updateMenuPosition();
@@ -73,7 +71,6 @@ export function Dropdown({ options, value, onChange, placeholder, multiple = fal
     };
   }, [open, updateMenuPosition]);
 
-  // Close on outside click
   useEffect(() => {
     if (!open) return;
     const handler = (e: MouseEvent) => {
@@ -140,11 +137,11 @@ export function Dropdown({ options, value, onChange, placeholder, multiple = fal
           transition={{ duration: 0.14, ease: [0.4, 0, 0.2, 1] }}
           style={{
             ...menuStyle,
-            background: 'rgba(255,255,255,0.98)',
-            backdropFilter: 'blur(24px)',
-            border: '1px solid rgba(255,255,255,0.95)',
+            background: 'rgba(13,15,24,0.97)',
+            backdropFilter: 'blur(28px) saturate(160%)',
+            border: '1px solid rgba(255,255,255,0.1)',
             borderRadius: '14px',
-            boxShadow: '0 8px 40px rgba(0,0,0,0.14), 0 2px 8px rgba(0,0,0,0.06)',
+            boxShadow: '0 12px 48px rgba(0,0,0,0.6), inset 0 1px 0 rgba(255,255,255,0.07)',
             overflow: 'hidden',
             minWidth: '180px',
           }}
@@ -154,11 +151,11 @@ export function Dropdown({ options, value, onChange, placeholder, multiple = fal
               <div style={{
                 display: 'flex', alignItems: 'center', gap: '8px',
                 padding: '7px 10px',
-                background: 'var(--off-white)',
+                background: 'rgba(255,255,255,0.04)',
                 borderRadius: '8px',
-                border: '1px solid var(--border)',
+                border: '1px solid rgba(255,255,255,0.08)',
               }}>
-                <Search size={13} color="var(--text-muted)" />
+                <Search size={13} color="rgba(228,231,242,0.28)" />
                 <input
                   ref={searchRef}
                   value={search}
@@ -166,13 +163,14 @@ export function Dropdown({ options, value, onChange, placeholder, multiple = fal
                   placeholder="Search..."
                   style={{
                     border: 'none', background: 'transparent',
-                    fontSize: '13px', color: 'var(--text-primary)',
-                    width: '100%', fontFamily: 'DM Sans, sans-serif',
+                    fontSize: '13px', color: 'rgba(228,231,242,0.9)',
+                    width: '100%', fontFamily: 'Instrument Sans, sans-serif',
+                    outline: 'none',
                   }}
                 />
                 {search && (
                   <button onClick={() => setSearch('')} style={{ background: 'none', border: 'none', cursor: 'pointer', display: 'flex', padding: 0 }}>
-                    <X size={11} color="var(--text-muted)" />
+                    <X size={11} color="rgba(228,231,242,0.28)" />
                   </button>
                 )}
               </div>
@@ -181,7 +179,7 @@ export function Dropdown({ options, value, onChange, placeholder, multiple = fal
 
           <div style={{ maxHeight: '210px', overflowY: 'auto', padding: '6px' }}>
             {filtered.length === 0 ? (
-              <div style={{ padding: '18px', textAlign: 'center', fontSize: '13px', color: 'var(--text-muted)' }}>
+              <div style={{ padding: '18px', textAlign: 'center', fontSize: '13px', color: 'rgba(228,231,242,0.28)' }}>
                 No results
               </div>
             ) : (
@@ -193,13 +191,13 @@ export function Dropdown({ options, value, onChange, placeholder, multiple = fal
                     width: '100%', display: 'flex', alignItems: 'center',
                     justifyContent: 'space-between', gap: '8px',
                     padding: '7px 10px',
-                    background: isSelected(opt.value) ? 'var(--accent-light)' : 'transparent',
+                    background: isSelected(opt.value) ? 'rgba(27,202,142,0.1)' : 'transparent',
                     border: 'none', borderRadius: '8px', cursor: 'pointer',
-                    transition: 'all 0.1s ease', textAlign: 'left',
+                    transition: 'background 0.1s ease', textAlign: 'left',
                   }}
                   onMouseEnter={e => {
                     if (!isSelected(opt.value))
-                      (e.currentTarget as HTMLElement).style.background = 'var(--surface-hover)';
+                      (e.currentTarget as HTMLElement).style.background = 'rgba(255,255,255,0.05)';
                   }}
                   onMouseLeave={e => {
                     if (!isSelected(opt.value))
@@ -210,30 +208,32 @@ export function Dropdown({ options, value, onChange, placeholder, multiple = fal
                     {opt.icon && <span style={{ fontSize: '14px' }}>{opt.icon}</span>}
                     <span style={{
                       fontSize: '13.5px',
-                      color: isSelected(opt.value) ? 'var(--accent)' : 'var(--text-primary)',
+                      color: isSelected(opt.value) ? '#1bca8e' : 'rgba(228,231,242,0.82)',
                       fontWeight: isSelected(opt.value) ? 500 : 400,
                       textTransform: 'capitalize',
+                      fontFamily: 'Instrument Sans, sans-serif',
                     }}>
                       {opt.label}
                     </span>
                   </span>
-                  {isSelected(opt.value) && <Check size={13} color="var(--accent)" />}
+                  {isSelected(opt.value) && <Check size={13} color="#1bca8e" />}
                 </button>
               ))
             )}
           </div>
 
           {multiple && Array.isArray(selected) && selected.length > 0 && (
-            <div style={{ padding: '6px 10px 8px', borderTop: '1px solid var(--border)', display: 'flex', justifyContent: 'flex-end' }}>
+            <div style={{ padding: '6px 10px 8px', borderTop: '1px solid rgba(255,255,255,0.07)', display: 'flex', justifyContent: 'flex-end' }}>
               <button
                 onClick={clearAll}
                 style={{
-                  fontSize: '12px', color: 'var(--text-muted)', background: 'none',
+                  fontSize: '12px', color: 'rgba(228,231,242,0.35)', background: 'none',
                   border: 'none', cursor: 'pointer', padding: '3px 8px',
                   borderRadius: '6px', transition: 'all 0.1s',
+                  fontFamily: 'Instrument Sans, sans-serif',
                 }}
-                onMouseEnter={e => { (e.currentTarget as HTMLElement).style.color = 'var(--text-secondary)'; }}
-                onMouseLeave={e => { (e.currentTarget as HTMLElement).style.color = 'var(--text-muted)'; }}
+                onMouseEnter={e => { (e.currentTarget as HTMLElement).style.color = 'rgba(228,231,242,0.65)'; }}
+                onMouseLeave={e => { (e.currentTarget as HTMLElement).style.color = 'rgba(228,231,242,0.35)'; }}
               >
                 Clear all
               </button>
@@ -249,8 +249,8 @@ export function Dropdown({ options, value, onChange, placeholder, multiple = fal
       {label && (
         <div style={{
           fontSize: '11px', fontWeight: 600, letterSpacing: '0.06em',
-          textTransform: 'uppercase', color: 'var(--text-muted)',
-          marginBottom: '6px', fontFamily: 'DM Mono, monospace',
+          textTransform: 'uppercase', color: 'rgba(228,231,242,0.28)',
+          marginBottom: '6px', fontFamily: 'JetBrains Mono, monospace',
         }}>
           {label}
         </div>
@@ -262,30 +262,28 @@ export function Dropdown({ options, value, onChange, placeholder, multiple = fal
         style={{
           width: '100%', display: 'flex', alignItems: 'center',
           justifyContent: 'space-between', gap: '8px',
-          padding: '10px 14px',
-          background: open ? 'rgba(255,255,255,0.95)' : 'rgba(255,255,255,0.75)',
-          border: `1px solid ${open ? 'rgba(27,202,142,0.4)' : 'var(--border)'}`,
-          borderRadius: '12px', cursor: 'pointer',
+          padding: '9px 12px',
+          background: open ? 'rgba(255,255,255,0.06)' : 'rgba(255,255,255,0.03)',
+          border: `1px solid ${open ? 'rgba(27,202,142,0.35)' : 'rgba(255,255,255,0.09)'}`,
+          borderRadius: '10px', cursor: 'pointer',
           transition: 'all 0.15s ease',
-          boxShadow: open ? '0 0 0 3px rgba(27,202,142,0.1)' : 'var(--shadow-sm)',
+          boxShadow: open ? '0 0 0 3px rgba(27,202,142,0.08)' : 'none',
           backdropFilter: 'blur(8px)',
         }}
       >
-        <span style={{
-          display: 'flex', alignItems: 'center', gap: '7px',
-          overflow: 'hidden', flex: 1,
-        }}>
+        <span style={{ display: 'flex', alignItems: 'center', gap: '7px', overflow: 'hidden', flex: 1 }}>
           {selectedIcon && (
             <span style={{ display: 'flex', alignItems: 'center', flexShrink: 0 }}>
               {selectedIcon}
             </span>
           )}
           <span style={{
-            fontSize: '14px',
-            color: hasValue ? 'var(--text-primary)' : 'var(--text-muted)',
+            fontSize: '13.5px',
+            color: hasValue ? 'rgba(228,231,242,0.88)' : 'rgba(228,231,242,0.32)',
             fontWeight: hasValue ? 500 : 400,
             overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
             textAlign: 'left', textTransform: 'capitalize',
+            fontFamily: 'Instrument Sans, sans-serif',
           }}>
             {displayLabel()}
           </span>
@@ -298,12 +296,12 @@ export function Dropdown({ options, value, onChange, placeholder, multiple = fal
               style={{
                 display: 'flex', alignItems: 'center', justifyContent: 'center',
                 width: '18px', height: '18px', borderRadius: '50%',
-                background: 'var(--border)', cursor: 'pointer', transition: 'background 0.12s',
+                background: 'rgba(255,255,255,0.08)', cursor: 'pointer', transition: 'background 0.12s',
               }}
-              onMouseEnter={e => (e.currentTarget.style.background = 'var(--border-strong)')}
-              onMouseLeave={e => (e.currentTarget.style.background = 'var(--border)')}
+              onMouseEnter={e => (e.currentTarget.style.background = 'rgba(255,255,255,0.14)')}
+              onMouseLeave={e => (e.currentTarget.style.background = 'rgba(255,255,255,0.08)')}
             >
-              <X size={10} color="var(--text-secondary)" />
+              <X size={10} color="rgba(228,231,242,0.5)" />
             </span>
           )}
           <motion.span
@@ -311,7 +309,7 @@ export function Dropdown({ options, value, onChange, placeholder, multiple = fal
             transition={{ duration: 0.2 }}
             style={{ display: 'flex' }}
           >
-            <ChevronDown size={15} color="var(--text-muted)" />
+            <ChevronDown size={15} color="rgba(228,231,242,0.32)" />
           </motion.span>
         </div>
       </button>

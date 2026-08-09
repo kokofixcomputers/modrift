@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { motion } from 'framer-motion';
-import { Download, Heart, Clock, ExternalLink, Package, Layers, Cpu, Plug, Zap, Image } from 'lucide-react';
+import { Download, Heart, Clock, Package, Layers, Plug, Zap, Image } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
 import type { SearchHit } from '../types/modrinth';
 import { formatDownloads, formatDate, numToHex } from '../api/modrinth';
 import { getLoaderIcon, LOADER_COLORS } from './LoaderIcons';
@@ -8,162 +9,117 @@ import { getLoaderIcon, LOADER_COLORS } from './LoaderIcons';
 interface ModCardProps {
   hit: SearchHit;
   index: number;
-  onClick: () => void;
 }
 
-const PROJECT_TYPE_META: Record<string, { icon: React.ReactNode; label: string }> = {
-  mod:          { icon: <Package size={11} />,  label: 'Mod' },
-  modpack:      { icon: <Layers size={11} />,   label: 'Modpack' },
-  resourcepack: { icon: <Image size={11} />,    label: 'Resource Pack' },
-  shader:       { icon: <Zap size={11} />,      label: 'Shader' },
-  plugin:       { icon: <Plug size={11} />,     label: 'Plugin' },
+const TYPE_ICON: Record<string, React.ReactNode> = {
+  mod:          <Package size={10} />,
+  modpack:      <Layers size={10} />,
+  resourcepack: <Image size={10} />,
+  shader:       <Zap size={10} />,
+  plugin:       <Plug size={10} />,
+};
+const TYPE_LABEL: Record<string, string> = {
+  mod: 'Mod', modpack: 'Modpack', resourcepack: 'Resource Pack',
+  shader: 'Shader', plugin: 'Plugin',
 };
 
+const MOD_LOADERS = new Set(['fabric','forge','quilt','neoforge','babric','liteloader','rift','modloader','risugami']);
+const PLUGIN_LOADERS = new Set(['paper','spigot','bukkit','folia','purpur','sponge','velocity','waterfall','bungeecord','geyser','geyser_plugin']);
 
-export function ModCard({ hit, index, onClick }: ModCardProps) {
+export function ModCard({ hit, index }: ModCardProps) {
+  const navigate = useNavigate();
   const [imgError, setImgError] = useState(false);
-  const accentHex = numToHex(hit.color);
+  const accentHex = numToHex(hit.color) || 'var(--accent)';
+
+  const loaders = [...new Set(hit.categories?.filter(c =>
+    hit.project_type === 'plugin' ? PLUGIN_LOADERS.has(c) : MOD_LOADERS.has(c)
+  ))].slice(0, 3);
 
   return (
     <motion.div
-      initial={{ opacity: 0, y: 16 }}
+      initial={{ opacity: 0, y: 12 }}
       animate={{ opacity: 1, y: 0 }}
-      transition={{ duration: 0.35, delay: index * 0.04, ease: [0.4, 0, 0.2, 1] }}
-      whileHover={{ y: -2 }}
-      onClick={onClick}
+      transition={{ duration: 0.3, delay: index * 0.035, ease: [0.4, 0, 0.2, 1] }}
+      onClick={() => navigate(`/mod/${hit.slug}`)}
+      className="glass-card"
       style={{
         cursor: 'pointer',
-        borderRadius: '18px',
+        borderRadius: '14px',
         overflow: 'hidden',
         position: 'relative',
-        background: 'rgba(255,255,255,0.8)',
-        backdropFilter: 'blur(12px)',
-        border: '1px solid rgba(255,255,255,0.9)',
-        boxShadow: '0 2px 12px rgba(0,0,0,0.05), 0 1px 3px rgba(0,0,0,0.04), inset 0 1px 0 rgba(255,255,255,0.8)',
-        transition: 'box-shadow 0.2s ease, border-color 0.2s ease, background 0.2s ease',
+        transition: 'background 0.18s, border-color 0.18s, box-shadow 0.18s',
       }}
-      onHoverStart={(e) => {
-        const el = (e.target as HTMLElement).closest('[data-card]') as HTMLElement;
-        if (el) {
-          el.style.boxShadow = '0 8px 30px rgba(0,0,0,0.09), 0 2px 8px rgba(0,0,0,0.05), inset 0 1px 0 rgba(255,255,255,0.9)';
-          el.style.borderColor = 'rgba(255,255,255,1)';
-          el.style.background = 'rgba(255,255,255,0.92)';
-        }
-      }}
-      data-card=""
+      whileHover={{ scale: 1.005 }}
     >
       {/* Accent top strip */}
       <div style={{
-        position: 'absolute',
-        top: 0,
-        left: 0,
-        right: 0,
-        height: '3px',
-        background: `linear-gradient(90deg, ${accentHex}80, ${accentHex}20)`,
+        position: 'absolute', top: 0, left: 0, right: 0, height: '2px',
+        background: `linear-gradient(90deg, ${accentHex}70, transparent)`,
       }} />
 
-      <div style={{ padding: '20px', paddingTop: '23px' }}>
+      <div style={{ padding: '16px', paddingTop: '18px' }}>
         {/* Header row */}
-        <div style={{ display: 'flex', gap: '14px', alignItems: 'flex-start' }}>
+        <div style={{ display: 'flex', gap: '12px', alignItems: 'flex-start', marginBottom: '10px' }}>
           {/* Icon */}
           <div style={{
-            width: '54px',
-            height: '54px',
-            borderRadius: '13px',
-            overflow: 'hidden',
-            flexShrink: 0,
-            background: `linear-gradient(135deg, ${accentHex}22, ${accentHex}08)`,
-            border: `1px solid ${accentHex}30`,
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            boxShadow: `0 2px 8px ${accentHex}20`,
+            width: '46px', height: '46px', borderRadius: '11px',
+            overflow: 'hidden', flexShrink: 0,
+            background: `linear-gradient(135deg, ${accentHex}20, ${accentHex}08)`,
+            border: `1px solid ${accentHex}28`,
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
           }}>
             {hit.icon_url && !imgError ? (
-              <img
-                src={hit.icon_url}
-                alt={hit.title}
-                onError={() => setImgError(true)}
-                style={{ width: '100%', height: '100%', objectFit: 'cover' }}
-              />
+              <img src={hit.icon_url} alt={hit.title} onError={() => setImgError(true)}
+                style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
             ) : (
-              <span style={{ fontSize: '24px' }}>
-                <Package size={24} color={accentHex} />
-              </span>
+              <Package size={20} color={accentHex} />
             )}
           </div>
 
-          {/* Info */}
           <div style={{ flex: 1, minWidth: 0 }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '3px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '2px' }}>
               <h3 style={{
-                fontFamily: 'Syne, sans-serif',
-                fontSize: '15px',
-                fontWeight: 700,
-                color: 'var(--text-primary)',
-                overflow: 'hidden',
-                textOverflow: 'ellipsis',
-                whiteSpace: 'nowrap',
-                flex: 1,
+                fontSize: '14px', fontWeight: 600,
+                color: 'var(--text)', fontFamily: 'Instrument Sans, sans-serif',
+                overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1,
               }}>
                 {hit.title}
               </h3>
               <span style={{
-                fontSize: '10px',
-                color: accentHex,
-                background: `${accentHex}15`,
-                border: `1px solid ${accentHex}30`,
-                padding: '2px 7px',
-                borderRadius: '20px',
-                fontWeight: 600,
-                flexShrink: 0,
-                display: 'flex',
-                alignItems: 'center',
-                gap: '3px',
-                fontFamily: 'DM Mono, monospace',
+                fontSize: '10px', color: accentHex,
+                background: `${accentHex}14`, border: `1px solid ${accentHex}28`,
+                padding: '2px 6px', borderRadius: '20px', fontWeight: 600,
+                flexShrink: 0, display: 'flex', alignItems: 'center', gap: '3px',
+                fontFamily: 'JetBrains Mono, monospace',
               }}>
-                {(PROJECT_TYPE_META[hit.project_type] ?? PROJECT_TYPE_META.mod).icon}
-                {(PROJECT_TYPE_META[hit.project_type] ?? PROJECT_TYPE_META.mod).label}
+                {TYPE_ICON[hit.project_type] ?? TYPE_ICON.mod}
+                {TYPE_LABEL[hit.project_type] ?? 'Mod'}
               </span>
             </div>
-
-            <p style={{
-              fontSize: '12px',
-              color: 'var(--text-secondary)',
-              fontWeight: 400,
-            }}>
-              by <span style={{ color: 'var(--text-primary)', fontWeight: 500 }}>{hit.author}</span>
+            <p style={{ fontSize: '12px', color: 'var(--text-3)', fontFamily: 'Instrument Sans, sans-serif' }}>
+              by <span style={{ color: 'var(--text-2)', fontWeight: 500 }}>{hit.author}</span>
             </p>
           </div>
         </div>
 
         {/* Description */}
         <p style={{
-          fontSize: '13px',
-          color: 'var(--text-secondary)',
-          lineHeight: 1.55,
-          marginTop: '12px',
-          display: '-webkit-box',
-          WebkitLineClamp: 2,
-          WebkitBoxOrient: 'vertical',
-          overflow: 'hidden',
+          fontSize: '12px', color: 'var(--text-2)', lineHeight: 1.55,
+          display: '-webkit-box', WebkitLineClamp: 2,
+          WebkitBoxOrient: 'vertical', overflow: 'hidden',
+          marginBottom: '10px',
         }}>
           {hit.description}
         </p>
 
-        {/* Loaders */}
+        {/* Categories */}
         {hit.display_categories?.length > 0 && (
-          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '5px', marginTop: '12px' }}>
-            {hit.display_categories.slice(0, 5).map(cat => (
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px', marginBottom: '8px' }}>
+            {hit.display_categories.slice(0, 4).map(cat => (
               <span key={cat} style={{
-                fontSize: '11px',
-                color: 'var(--text-secondary)',
-                background: 'var(--surface)',
-                border: '1px solid var(--border)',
-                padding: '2px 8px',
-                borderRadius: '20px',
-                fontWeight: 500,
-                textTransform: 'capitalize',
+                fontSize: '10px', color: 'var(--text-3)',
+                background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.07)',
+                padding: '2px 7px', borderRadius: '20px', fontWeight: 500, textTransform: 'capitalize',
               }}>
                 {cat}
               </span>
@@ -171,33 +127,20 @@ export function ModCard({ hit, index, onClick }: ModCardProps) {
           </div>
         )}
 
-        {/* Loaders row */}
-        {hit.versions?.length > 0 && (
-          <div style={{ display: 'flex', gap: '5px', marginTop: '8px', flexWrap: 'wrap' }}>
-            {[...new Set(hit.categories?.filter(c => {
-              if (hit.project_type === 'plugin') {
-                return ['paper', 'spigot', 'bukkit', 'folia', 'purpur', 'sponge', 'velocity', 'waterfall', 'bungeecord', 'geyser', 'geyser_plugin'].includes(c);
-              }
-              return ['fabric', 'forge', 'quilt', 'neoforge', 'babric', 'liteloader', 'rift', 'modloader', 'risugami'].includes(c);
-            }))].slice(0, 4).map(loader => {
+        {/* Loaders */}
+        {loaders.length > 0 && (
+          <div style={{ display: 'flex', gap: '4px', flexWrap: 'wrap', marginBottom: '10px' }}>
+            {loaders.map(loader => {
               const color = LOADER_COLORS[loader] ?? '#64748b';
               return (
                 <span key={loader} style={{
-                  display: 'inline-flex',
-                  alignItems: 'center',
-                  gap: '4px',
-                  fontSize: '11px',
-                  color,
-                  background: `${color}15`,
-                  border: `1px solid ${color}35`,
-                  padding: '3px 8px 3px 5px',
-                  borderRadius: '6px',
-                  fontWeight: 600,
-                  textTransform: 'capitalize',
-                  fontFamily: 'DM Mono, monospace',
+                  display: 'inline-flex', alignItems: 'center', gap: '4px',
+                  fontSize: '10px', color, background: `${color}16`,
+                  border: `1px solid ${color}30`, padding: '2px 7px 2px 5px',
+                  borderRadius: '5px', fontWeight: 600, textTransform: 'capitalize',
+                  fontFamily: 'JetBrains Mono, monospace',
                 }}>
-                  {getLoaderIcon(loader, 12)}
-                  {loader}
+                  {getLoaderIcon(loader, 11)}{loader}
                 </span>
               );
             })}
@@ -206,19 +149,18 @@ export function ModCard({ hit, index, onClick }: ModCardProps) {
 
         {/* Stats footer */}
         <div style={{
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'space-between',
-          marginTop: '14px',
-          paddingTop: '12px',
-          borderTop: '1px solid var(--border)',
+          display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+          paddingTop: '10px', borderTop: '1px solid rgba(255,255,255,0.05)',
         }}>
-          <div style={{ display: 'flex', gap: '14px' }}>
-            <Stat icon={<Download size={12} />} value={formatDownloads(hit.downloads)} />
-            <Stat icon={<Heart size={12} />} value={formatDownloads(hit.follows)} />
-            <Stat icon={<Clock size={12} />} value={formatDate(hit.date_modified)} />
+          <div style={{ display: 'flex', gap: '12px' }}>
+            <Stat icon={<Download size={11} />} value={formatDownloads(hit.downloads)} />
+            <Stat icon={<Heart size={11} />} value={formatDownloads(hit.follows)} />
+            <Stat icon={<Clock size={11} />} value={formatDate(hit.date_modified)} />
           </div>
-          <ExternalLink size={13} color="var(--text-muted)" />
+          <div style={{
+            width: '5px', height: '5px', borderRadius: '50%',
+            background: 'var(--accent)', opacity: 0.5,
+          }} />
         </div>
       </div>
     </motion.div>
@@ -228,12 +170,9 @@ export function ModCard({ hit, index, onClick }: ModCardProps) {
 function Stat({ icon, value }: { icon: React.ReactNode; value: string }) {
   return (
     <span style={{
-      display: 'flex',
-      alignItems: 'center',
-      gap: '4px',
-      fontSize: '12px',
-      color: 'var(--text-muted)',
-      fontWeight: 500,
+      display: 'flex', alignItems: 'center', gap: '4px',
+      fontSize: '11px', color: 'var(--text-3)', fontWeight: 500,
+      fontFamily: 'JetBrains Mono, monospace',
     }}>
       {icon}{value}
     </span>

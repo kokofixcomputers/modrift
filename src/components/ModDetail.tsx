@@ -1,7 +1,11 @@
 import { useState, useEffect, useMemo } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
-import { X, Download, Heart, Clock, Package, ExternalLink, ChevronDown, CheckCircle, Tag, Calendar, AlertTriangle, Maximize2, Minimize2, Images, Loader2, Globe } from 'lucide-react';
-import type { SearchHit, Version } from '../types/modrinth';
+import {
+  X, Download, Heart, Clock, Package, ExternalLink, ChevronDown,
+  CheckCircle, Tag, Calendar, AlertTriangle, Images, Loader2, Globe, Search,
+} from 'lucide-react';
+import type { SearchHit, Version, Dependency } from '../types/modrinth';
 import { getProjectVersions, formatDownloads, formatDate, numToHex } from '../api/modrinth';
 import { Dropdown } from './Dropdown';
 import { getLoaderIcon } from './LoaderIcons';
@@ -15,317 +19,369 @@ const modrinthV2 = axios.create({
   headers: { 'User-Agent': 'BetterModrinth/1.0 (kokocanfixit@gmail.com)' },
 });
 
-interface ModDetailProps {
+export interface ModDetailProps {
   hit: SearchHit;
   onClose: () => void;
-  contextType?: string; // active tab type — fixes deep link for resourcepack/shader/datapack
+  contextType?: string;
+  mode?: 'modal' | 'page';
 }
 
 const VERSION_TYPE_COLOR: Record<string, string> = {
   release: '#1bca8e',
   beta: '#f59e0b',
-  alpha: '#ef4444',
+  alpha: '#f43f5e',
 };
 
-function SectionTitle({ icon, label }: { icon: React.ReactNode; label: string }) {
+const label: React.CSSProperties = {
+  fontSize: '10px', fontWeight: 600, letterSpacing: '0.07em',
+  textTransform: 'uppercase', color: 'var(--text-3)',
+  fontFamily: 'JetBrains Mono, monospace', marginBottom: '8px',
+};
+
+function SectionTitle({ icon, children }: { icon: React.ReactNode; children: React.ReactNode }) {
   return (
-    <div style={{ display: 'flex', alignItems: 'center', gap: '6px', color: 'var(--text-muted)', marginBottom: '10px' }}>
-      {icon}
-      <span style={{
-        fontSize: '11px', fontWeight: 600, letterSpacing: '0.06em',
-        textTransform: 'uppercase', fontFamily: 'DM Mono, monospace',
-      }}>
-        {label}
-      </span>
+    <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '10px' }}>
+      <span style={{ color: 'var(--text-3)' }}>{icon}</span>
+      <span style={{ ...label, marginBottom: 0 }}>{children}</span>
     </div>
   );
 }
 
-function LoadingSpinner({ color }: { color: string }) {
+interface DepInfo {
+  dep: Dependency;
+  project: { id: string; slug: string; title: string; icon_url: string | null; project_type: string };
+}
+
+function DepCard({ info }: { info: DepInfo }) {
+  const navigate = useNavigate();
+  const [downloading, setDownloading] = useState(false);
+  const [imgErr, setImgErr] = useState(false);
+  const typeColor = info.dep.dependency_type === 'required' ? 'var(--red)' : 'var(--amber)';
+
+  const handleDownload = async () => {
+    setDownloading(true);
+    try {
+      const r = await modrinthV2.get(`/project/${info.project.slug}/version`, {
+        params: { limit: 1, version_type: 'release' },
+      });
+      const primaryFile = r.data[0]?.files?.find((f: { primary: boolean }) => f.primary) ?? r.data[0]?.files?.[0];
+      if (primaryFile?.url) {
+        const a = document.createElement('a');
+        a.href = primaryFile.url; a.download = primaryFile.filename; a.click();
+      }
+    } finally { setDownloading(false); }
+  };
+
   return (
     <div style={{
-      width: '16px', height: '16px', borderRadius: '50%',
-      border: `2px solid ${color}20`, borderTopColor: color,
-      animation: 'spin 0.7s linear infinite', flexShrink: 0,
-    }} />
+      display: 'flex', alignItems: 'center', gap: '10px',
+      padding: '10px 12px',
+      background: 'var(--card)', border: '1px solid var(--card-border)',
+      borderRadius: '10px',
+    }}>
+      <div style={{
+        width: '30px', height: '30px', borderRadius: '8px', flexShrink: 0,
+        overflow: 'hidden', background: 'var(--bg-2)', border: '1px solid var(--card-border)',
+        display: 'flex', alignItems: 'center', justifyContent: 'center',
+      }}>
+        {info.project.icon_url && !imgErr
+          ? <img src={info.project.icon_url} alt={info.project.title} onError={() => setImgErr(true)} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+          : <Package size={13} color="var(--text-3)" />}
+      </div>
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <div style={{ fontSize: '13px', fontWeight: 600, color: 'var(--text)', fontFamily: 'Instrument Sans, sans-serif', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+          {info.project.title}
+        </div>
+        <span style={{ fontSize: '10px', fontWeight: 700, letterSpacing: '0.05em', textTransform: 'uppercase', color: typeColor, fontFamily: 'JetBrains Mono, monospace' }}>
+          {info.dep.dependency_type}
+        </span>
+      </div>
+      <div style={{ display: 'flex', gap: '4px', flexShrink: 0 }}>
+        <IconBtn title="View mod" onClick={() => navigate(`/mod/${info.project.slug}`)}>
+          <ExternalLink size={12} color="var(--text-3)" />
+        </IconBtn>
+        <IconBtn title="Download latest" onClick={handleDownload} disabled={downloading}>
+          {downloading
+            ? <Loader2 size={12} color="var(--text-3)" style={{ animation: 'spin 0.8s linear infinite' }} />
+            : <Download size={12} color="var(--accent)" />}
+        </IconBtn>
+      </div>
+    </div>
   );
 }
 
-export function ModDetail({ hit, onClose, contextType }: ModDetailProps) {
-  const [versions, setVersions] = useState<Version[]>([]);
-  const [projectBody, setProjectBody] = useState<string | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [expandedVersion, setExpandedVersion] = useState<string | null>(null);
-  const [imgError, setImgError] = useState(false);
-  const [fullscreen, setFullscreen] = useState(() => localStorage.getItem('detail-fullscreen') === 'true');
-  const [lightboxImg, setLightboxImg] = useState<string | null>(null);
+function IconBtn({ onClick, disabled, title, children }: {
+  onClick: () => void; disabled?: boolean; title?: string; children: React.ReactNode;
+}) {
+  return (
+    <button
+      onClick={onClick} disabled={disabled} title={title}
+      style={{
+        width: '26px', height: '26px', borderRadius: '7px',
+        background: 'var(--card)', border: '1px solid var(--card-border)',
+        display: 'flex', alignItems: 'center', justifyContent: 'center',
+        cursor: disabled ? 'default' : 'pointer', transition: 'all 0.14s',
+        opacity: disabled ? 0.5 : 1,
+      }}
+      onMouseEnter={e => { if (!disabled) (e.currentTarget as HTMLElement).style.borderColor = 'var(--card-border-hover)'; (e.currentTarget as HTMLElement).style.background = 'var(--card-hover)'; }}
+      onMouseLeave={e => { (e.currentTarget as HTMLElement).style.borderColor = 'var(--card-border)'; (e.currentTarget as HTMLElement).style.background = 'var(--card)'; }}
+    >
+      {children}
+    </button>
+  );
+}
 
-  // Translation state
+export function ModDetail({ hit, onClose, contextType, mode = 'modal' }: ModDetailProps) {
+  const [versions, setVersions]       = useState<Version[]>([]);
+  const [projectBody, setProjectBody] = useState<string | null>(null);
+  const [loading, setLoading]         = useState(true);
+  const [expandedVersion, setExpandedVersion] = useState<string | null>(null);
+  const [imgError, setImgError]       = useState(false);
+  const [deps, setDeps]               = useState<DepInfo[]>([]);
+  const [lightboxImg, setLightboxImg] = useState<string | null>(null);
+  const [galleryMeta, setGalleryMeta] = useState<{ url: string; raw_url: string; title: string | null; description: string | null }[]>([]);
+  const [hoveredScreenshot, setHoveredScreenshot] = useState<number | null>(null);
+
   const { lang, translate, forceTranslate } = useLanguage();
   const [translatedDesc, setTranslatedDesc] = useState<string | null>(null);
   const [translatedBody, setTranslatedBody] = useState<string | null>(null);
-  const [translating, setTranslating] = useState(false);
+  const [translating, setTranslating]       = useState(false);
 
   const [selectedMcVersion, setSelectedMcVersion] = useState('');
-  const [selectedLoader, setSelectedLoader] = useState('');
-  const [showSnapshots, setShowSnapshots] = useState(false);
+  const [selectedLoader, setSelectedLoader]       = useState('');
+  const [showSnapshots, setShowSnapshots]         = useState(false);
 
-  const accentHex = numToHex(hit.color);
+  const [activeTab, setActiveTab]   = useState<'about' | 'screenshots' | 'versions'>('about');
+  const [vTabMc, setVTabMc]         = useState('');
+  const [vTabLoader, setVTabLoader] = useState('');
+  const [vTabTypes, setVTabTypes]   = useState(['release', 'beta', 'alpha']);
+  const [vTabSearch, setVTabSearch] = useState('');
 
-  // Deep link type: prefer contextType tab over hit.project_type when it's more specific
+  const accentHex = numToHex(hit.color) || '#1bca8e';
   const installType = (contextType && contextType !== 'all' && contextType !== 'server')
-    ? contextType
-    : hit.project_type;
+    ? contextType : hit.project_type;
 
+  // Fetch versions + body + deps
   useEffect(() => {
     setLoading(true);
-    setSelectedMcVersion('');
-    setSelectedLoader('');
-    setProjectBody(null);
-    setTranslatedDesc(null);
-    setTranslatedBody(null);
+    setSelectedMcVersion(''); setSelectedLoader('');
+    setProjectBody(null); setTranslatedDesc(null); setTranslatedBody(null);
+    setDeps([]); setGalleryMeta([]);
+
     Promise.all([
       getProjectVersions(hit.slug),
-      modrinthV2.get(`/project/${hit.slug}`).then(r => r.data.body).catch(() => null),
-    ]).then(([vers, body]) => {
+      modrinthV2.get(`/project/${hit.slug}`).then(r => ({ body: r.data.body as string | null, gallery: (r.data.gallery ?? []) as { url: string; raw_url: string; title: string | null; description: string | null }[] })).catch(() => ({ body: null, gallery: [] })),
+    ]).then(([vers, { body, gallery: gMeta }]) => {
       setVersions(vers);
       setProjectBody(body);
+      setGalleryMeta(gMeta);
+
+      const seen = new Set<string>();
+      const uniqueDeps: Dependency[] = [];
+      for (const v of vers) {
+        for (const d of v.dependencies) {
+          if (!d.project_id || d.dependency_type === 'incompatible' || seen.has(d.project_id)) continue;
+          seen.add(d.project_id);
+          uniqueDeps.push(d);
+        }
+      }
+      if (!uniqueDeps.length) return;
+
+      const ids = encodeURIComponent(JSON.stringify(uniqueDeps.map(d => d.project_id)));
+      modrinthV2.get(`/projects?ids=${ids}`).then(r => {
+        const projects: DepInfo['project'][] = r.data;
+        setDeps(uniqueDeps.map(dep => ({
+          dep, project: projects.find(p => p.id === dep.project_id)!,
+        })).filter(d => d.project));
+      }).catch(() => {});
     }).catch(() => setVersions([])).finally(() => setLoading(false));
   }, [hit.slug]);
 
-  // Translate when language changes or content loads
+  // Auto-translate
   useEffect(() => {
-    setTranslatedDesc(null);
-    setTranslatedBody(null);
+    setTranslatedDesc(null); setTranslatedBody(null);
     if (lang === 'en') return;
-
     let cancelled = false;
     setTranslating(true);
-
-    const descText = hit.description;
-    const bodyText = projectBody;
-
-    const tasks: Promise<void>[] = [
-      translate(descText).then(t => { if (!cancelled) setTranslatedDesc(t); }),
-      bodyText ? translate(bodyText).then(t => { if (!cancelled) setTranslatedBody(t); }) : Promise.resolve(),
+    const tasks = [
+      translate(hit.description).then(t => { if (!cancelled) setTranslatedDesc(t); }),
+      projectBody ? translate(projectBody).then(t => { if (!cancelled) setTranslatedBody(t); }) : Promise.resolve(),
     ];
-
     Promise.all(tasks).finally(() => { if (!cancelled) setTranslating(false); });
-
     return () => { cancelled = true; };
-  }, [lang, hit.slug, projectBody]); // eslint-disable-line react-hooks/exhaustive-deps
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [lang, hit.slug, projectBody]);
 
   const handleForceTranslate = async () => {
     setTranslating(true);
-    const target = lang;
-    const tasks = [
-      forceTranslate(hit.description, target).then(t => setTranslatedDesc(t)),
-      projectBody ? forceTranslate(projectBody, target).then(t => setTranslatedBody(t)) : Promise.resolve(),
-    ];
-    await Promise.all(tasks);
+    const t = lang;
+    await Promise.all([
+      forceTranslate(hit.description, t).then(r => setTranslatedDesc(r)),
+      projectBody ? forceTranslate(projectBody, t).then(r => setTranslatedBody(r)) : Promise.resolve(),
+    ]);
     setTranslating(false);
   };
 
+  // Escape to close (modal only)
   useEffect(() => {
-    const handler = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
-    window.addEventListener('keydown', handler);
-    return () => window.removeEventListener('keydown', handler);
-  }, [onClose]);
+    if (mode !== 'modal') return;
+    const h = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
+    window.addEventListener('keydown', h);
+    return () => window.removeEventListener('keydown', h);
+  }, [onClose, mode]);
 
+  // Version filtering
   const availableMcVersions = useMemo(() => {
-    const seen = new Set<string>();
-    const result: string[] = [];
-    for (const v of versions) {
-      for (const gv of v.game_versions) {
-        if (!seen.has(gv)) { seen.add(gv); result.push(gv); }
-      }
-    }
+    const seen = new Set<string>(); const result: string[] = [];
+    for (const v of versions) for (const gv of v.game_versions) { if (!seen.has(gv)) { seen.add(gv); result.push(gv); } }
     return result.sort((a, b) => b.localeCompare(a, undefined, { numeric: true }));
   }, [versions]);
 
   const availableLoaders = useMemo(() => {
-    const relevant = selectedMcVersion
-      ? versions.filter(v => v.game_versions.includes(selectedMcVersion))
-      : versions;
+    const relevant = selectedMcVersion ? versions.filter(v => v.game_versions.includes(selectedMcVersion)) : versions;
     const seen = new Set<string>();
-    for (const v of relevant) {
-      for (const l of v.loaders) { seen.add(l); }
-    }
+    for (const v of relevant) for (const l of v.loaders) seen.add(l);
     return [...seen].sort();
   }, [versions, selectedMcVersion]);
 
   useEffect(() => {
-    if (selectedLoader && !availableLoaders.includes(selectedLoader)) {
-      setSelectedLoader('');
-    }
+    if (selectedLoader && !availableLoaders.includes(selectedLoader)) setSelectedLoader('');
   }, [availableLoaders, selectedLoader]);
+
+  const isRelease = (v: string) => /^\d+(\.\d+)*$/.test(v);
+  const filteredMcVersions = showSnapshots ? availableMcVersions : availableMcVersions.filter(isRelease);
+  const snapshotCount = availableMcVersions.length - availableMcVersions.filter(isRelease).length;
+
+  useEffect(() => {
+    if (selectedMcVersion && !filteredMcVersions.includes(selectedMcVersion)) setSelectedMcVersion('');
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [showSnapshots]);
 
   const matchedVersion = useMemo(() => {
     if (!selectedMcVersion && !selectedLoader) return null;
-    const candidates = versions.filter(v => {
+    const priority = { release: 0, beta: 1, alpha: 2 };
+    return versions.filter(v => {
       const mcOk = !selectedMcVersion || v.game_versions.includes(selectedMcVersion);
       const loaderOk = !selectedLoader || v.loaders.includes(selectedLoader);
       return mcOk && loaderOk;
-    });
-    const priority = { release: 0, beta: 1, alpha: 2 };
-    return candidates.sort((a, b) => {
+    }).sort((a, b) => {
       const pa = priority[a.version_type as keyof typeof priority] ?? 3;
       const pb = priority[b.version_type as keyof typeof priority] ?? 3;
-      if (pa !== pb) return pa - pb;
-      return new Date(b.date_published).getTime() - new Date(a.date_published).getTime();
+      return pa !== pb ? pa - pb : new Date(b.date_published).getTime() - new Date(a.date_published).getTime();
     })[0] ?? null;
   }, [versions, selectedMcVersion, selectedLoader]);
 
+  const tabFilteredVersions = useMemo(() => {
+    const q = vTabSearch.trim().toLowerCase();
+    return versions.filter(v => {
+      const mcOk     = !vTabMc     || v.game_versions.includes(vTabMc);
+      const loaderOk = !vTabLoader || v.loaders.includes(vTabLoader);
+      const typeOk   = vTabTypes.includes(v.version_type);
+      const searchOk = !q || v.version_number.toLowerCase().includes(q) || (v.name ?? '').toLowerCase().includes(q);
+      return mcOk && loaderOk && typeOk && searchOk;
+    });
+  }, [versions, vTabMc, vTabLoader, vTabTypes, vTabSearch]);
+
+  // Strip size suffix + extension to get the bare hash, for cross-format matching
+  const imgHash = (url: string) => url.split('/').pop()?.replace(/_\d+/, '').replace(/\.[^.]+$/, '') ?? '';
+  // Return the API's full-res URL if we have it, otherwise fall back to regex strip
+  const fullRes = (url: string) => galleryMeta.find(g => imgHash(g.url) === imgHash(url))?.raw_url ?? url.replace(/_\d+(\.[^.]+)$/, '$1');
+
   const handleDownload = (file: Version['files'][number]) => {
-    const a = document.createElement('a');
-    a.href = file.url;
-    a.download = file.filename;
-    a.click();
+    const a = document.createElement('a'); a.href = file.url; a.download = file.filename; a.click();
   };
-
-  const isRelease = (v: string) => /^\d+(\.\d+)*$/.test(v);
-
-  const filteredMcVersions = showSnapshots
-    ? availableMcVersions
-    : availableMcVersions.filter(isRelease);
-
-  useEffect(() => {
-    if (selectedMcVersion && !filteredMcVersions.includes(selectedMcVersion)) {
-      setSelectedMcVersion('');
-    }
-  }, [showSnapshots]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  const snapshotCount = availableMcVersions.length - availableMcVersions.filter(isRelease).length;
-
-  const mcVersionOptions = filteredMcVersions.map(v => ({ value: v, label: v }));
-  const loaderOptions = availableLoaders.map(l => ({
-    value: l,
-    label: l,
-    icon: getLoaderIcon(l, 15),
-  }));
-
-  // ─── Section JSX variables ────────────────────────────────────────────────
-
-  const statsSection = (
-    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '10px', marginBottom: '22px' }}>
-      {[
-        { icon: <Download size={14} />, label: 'Downloads', value: formatDownloads(hit.downloads) },
-        { icon: <Heart size={14} />, label: 'Followers', value: formatDownloads(hit.follows) },
-        { icon: <Clock size={14} />, label: 'Updated', value: formatDate(hit.date_modified) },
-      ].map(stat => (
-        <div key={stat.label} style={{
-          background: 'var(--off-white)', border: '1px solid var(--border)',
-          borderRadius: '12px', padding: '12px', textAlign: 'center',
-        }}>
-          <div style={{ color: accentHex, marginBottom: '4px', display: 'flex', justifyContent: 'center' }}>{stat.icon}</div>
-          <div style={{ fontSize: '16px', fontWeight: 700, color: 'var(--text-primary)', fontFamily: 'Syne, sans-serif' }}>{stat.value}</div>
-          <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '2px' }}>{stat.label}</div>
-        </div>
-      ))}
-    </div>
-  );
 
   const gallery = hit.gallery ?? [];
 
-  const gallerySection = gallery.length > 0 ? (
-    <div style={{ marginBottom: '22px' }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: '6px', color: 'var(--text-muted)', marginBottom: '10px' }}>
-        <Images size={13} />
-        <span style={{ fontSize: '11px', fontWeight: 600, letterSpacing: '0.06em', textTransform: 'uppercase', fontFamily: 'DM Mono, monospace' }}>
-          Screenshots
-        </span>
-      </div>
-      <div style={{ display: 'flex', gap: '8px', overflowX: 'auto', paddingBottom: '4px' }}>
-        {gallery.map((url, i) => (
-          <div
-            key={i}
-            onClick={() => setLightboxImg(url)}
-            style={{
-              flexShrink: 0, width: '180px', height: '108px',
-              borderRadius: '10px', overflow: 'hidden',
-              border: '1px solid var(--border)',
-              cursor: 'pointer', position: 'relative',
-              transition: 'transform 0.15s, box-shadow 0.15s',
-            }}
-            onMouseEnter={e => {
-              (e.currentTarget as HTMLElement).style.transform = 'scale(1.03)';
-              (e.currentTarget as HTMLElement).style.boxShadow = '0 4px 16px rgba(0,0,0,0.14)';
-            }}
-            onMouseLeave={e => {
-              (e.currentTarget as HTMLElement).style.transform = '';
-              (e.currentTarget as HTMLElement).style.boxShadow = '';
-            }}
-          >
-            <img src={url} alt={`Screenshot ${i + 1}`}
-              style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-          </div>
-        ))}
-      </div>
-    </div>
-  ) : null;
+  // ── JSX sections ──────────────────────────────────────────────────
 
   const translateBtn = !translating && !translatedDesc && (
     <button
       onClick={handleForceTranslate}
       style={{
         display: 'inline-flex', alignItems: 'center', gap: '5px',
-        marginTop: '10px', padding: '5px 10px',
-        background: 'none', border: '1px solid var(--border)',
-        borderRadius: '8px', cursor: 'pointer', fontSize: '12px',
-        color: 'var(--text-muted)', fontFamily: 'DM Sans, sans-serif',
-        transition: 'all 0.15s',
+        marginTop: '12px', padding: '5px 10px',
+        background: 'none', border: '1px solid var(--card-border)',
+        borderRadius: '8px', cursor: 'pointer', fontSize: '11px',
+        color: 'var(--text-3)', fontFamily: 'Instrument Sans, sans-serif', transition: 'all 0.15s',
       }}
-      onMouseEnter={e => {
-        (e.currentTarget).style.borderColor = 'var(--accent)';
-        (e.currentTarget).style.color = 'var(--accent)';
-      }}
-      onMouseLeave={e => {
-        (e.currentTarget).style.borderColor = 'var(--border)';
-        (e.currentTarget).style.color = 'var(--text-muted)';
-      }}
+      onMouseEnter={e => { (e.currentTarget).style.borderColor = 'var(--accent-border)'; (e.currentTarget).style.color = 'var(--accent)'; }}
+      onMouseLeave={e => { (e.currentTarget).style.borderColor = 'var(--card-border)'; (e.currentTarget).style.color = 'var(--text-3)'; }}
     >
-      <Globe size={11} />
-      Translate
+      <Globe size={11} /> Translate
     </button>
   );
 
+  const statsSection = (
+    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '8px', marginBottom: '18px' }}>
+      {[
+        { icon: <Download size={13} />, label: 'Downloads', value: formatDownloads(hit.downloads) },
+        { icon: <Heart size={13} />,   label: 'Followers',  value: formatDownloads(hit.follows) },
+        { icon: <Clock size={13} />,   label: 'Updated',    value: formatDate(hit.date_modified) },
+      ].map(s => (
+        <div key={s.label} style={{
+          background: 'var(--card)', border: '1px solid var(--card-border)',
+          borderRadius: '10px', padding: '10px', textAlign: 'center',
+        }}>
+          <div style={{ color: accentHex, marginBottom: '4px', display: 'flex', justifyContent: 'center' }}>{s.icon}</div>
+          <div style={{ fontSize: '15px', fontWeight: 700, color: 'var(--text)', fontFamily: 'JetBrains Mono, monospace' }}>{s.value}</div>
+          <div style={{ fontSize: '10px', color: 'var(--text-3)', marginTop: '2px', fontFamily: 'JetBrains Mono, monospace' }}>{s.label}</div>
+        </div>
+      ))}
+    </div>
+  );
+
+  const gallerySection = gallery.length > 0 ? (
+    <div style={{ marginBottom: '22px' }}>
+      <SectionTitle icon={<Images size={13} />}>Screenshots</SectionTitle>
+      <div style={{ display: 'flex', gap: '8px', overflowX: 'auto', paddingBottom: '4px' }}>
+        {gallery.map((url, i) => (
+          <div key={i} onClick={() => setLightboxImg(fullRes(url))}
+            style={{
+              flexShrink: 0, width: '200px', height: '112px',
+              borderRadius: '10px', overflow: 'hidden', cursor: 'pointer',
+              border: '1px solid var(--card-border)', transition: 'all 0.15s',
+            }}
+            onMouseEnter={e => { (e.currentTarget as HTMLElement).style.borderColor = 'var(--card-border-hover)'; (e.currentTarget as HTMLElement).style.transform = 'scale(1.02)'; }}
+            onMouseLeave={e => { (e.currentTarget as HTMLElement).style.borderColor = 'var(--card-border)'; (e.currentTarget as HTMLElement).style.transform = ''; }}
+          >
+            <img src={url} alt={`Screenshot ${i + 1}`} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+          </div>
+        ))}
+      </div>
+    </div>
+  ) : null;
+
   const bodySection = (
     <div style={{
-      background: 'var(--off-white)', border: '1px solid var(--border)',
-      borderRadius: '14px', padding: '16px', marginBottom: '22px',
+      background: 'var(--card)', border: '1px solid var(--card-border)',
+      borderRadius: '12px', padding: '16px', marginBottom: '22px',
     }}>
       {translating && (
-        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '8px 0 12px', color: 'var(--text-muted)', fontSize: '12px' }}>
-          <Loader2 size={13} style={{ animation: 'spin 0.8s linear infinite' }} />
-          Translating...
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '4px 0 12px', color: 'var(--text-3)', fontSize: '12px' }}>
+          <Loader2 size={13} style={{ animation: 'spin 0.8s linear infinite' }} color="var(--accent)" />
+          Translating…
         </div>
       )}
-      {projectBody || translatedBody ? (
-        <MarkdownBody content={translatedBody ?? projectBody!} accent={accentHex} />
-      ) : (
-        <p style={{ fontSize: '14px', color: 'var(--text-secondary)', lineHeight: 1.65 }}>
-          {translatedDesc ?? hit.description}
-        </p>
-      )}
+      {projectBody || translatedBody
+        ? <MarkdownBody content={translatedBody ?? projectBody!} accent={accentHex} />
+        : <p style={{ fontSize: '14px', color: 'var(--text-2)', lineHeight: 1.65 }}>{translatedDesc ?? hit.description}</p>
+      }
       {translateBtn}
     </div>
   );
 
   const downloadSection = (
     <div style={{
-      background: 'white',
-      border: `1px solid ${accentHex}30`,
-      borderRadius: '16px',
-      padding: '18px',
-      marginBottom: '22px',
-      boxShadow: `0 4px 20px ${accentHex}10`,
+      background: 'var(--card)',
+      border: `1px solid ${accentHex}28`,
+      borderRadius: '14px', padding: '16px', marginBottom: '18px',
+      boxShadow: `0 4px 24px ${accentHex}0d`,
     }}>
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '14px' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-          <Download size={14} color={accentHex} />
-          <span style={{ fontFamily: 'Syne, sans-serif', fontSize: '13px', fontWeight: 700, color: 'var(--text-primary)' }}>
-            Download
-          </span>
+          <Download size={13} color={accentHex} />
+          <span style={{ fontSize: '12px', fontWeight: 700, color: 'var(--text)', fontFamily: 'Instrument Sans, sans-serif' }}>Download</span>
         </div>
         <ModrinthInstallButton
           href={`modrinth://${installType}/${hit.slug}`}
@@ -334,84 +390,57 @@ export function ModDetail({ hit, onClose, contextType }: ModDetailProps) {
             padding: '5px 11px',
             background: 'linear-gradient(135deg, #1bca8e, #0ea5e9)',
             color: 'white', borderRadius: '8px', border: 'none',
-            fontSize: '12px', fontWeight: 700, fontFamily: 'Syne, sans-serif',
-            boxShadow: '0 2px 10px rgba(27,202,142,0.35)',
-            transition: 'all 0.15s ease', cursor: 'pointer',
-            flexShrink: 0,
+            fontSize: '11px', fontWeight: 700, fontFamily: 'Instrument Sans, sans-serif',
+            boxShadow: '0 2px 10px rgba(27,202,142,0.3)',
+            transition: 'all 0.15s ease', cursor: 'pointer', flexShrink: 0,
           }}
-          onMouseEnter={e => {
-            e.currentTarget.style.filter = 'brightness(1.08)';
-            e.currentTarget.style.transform = 'translateY(-1px)';
-          }}
-          onMouseLeave={e => {
-            e.currentTarget.style.filter = '';
-            e.currentTarget.style.transform = '';
-          }}
+          onMouseEnter={e => { e.currentTarget.style.filter = 'brightness(1.1)'; }}
+          onMouseLeave={e => { e.currentTarget.style.filter = ''; }}
         />
       </div>
 
       {loading ? (
-        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '8px 0', color: 'var(--text-muted)', fontSize: '13px' }}>
-          <LoadingSpinner color={accentHex} />
-          Loading version info...
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '8px 0', color: 'var(--text-3)', fontSize: '12px' }}>
+          <Loader2 size={14} color={accentHex} style={{ animation: 'spin 0.7s linear infinite' }} />
+          Loading versions…
         </div>
       ) : (
         <>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', marginBottom: '12px' }}>
             <div>
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '6px' }}>
-                <span style={{
-                  fontSize: '11px', fontWeight: 600, letterSpacing: '0.05em',
-                  textTransform: 'uppercase', color: 'var(--text-muted)',
-                  fontFamily: 'DM Mono, monospace',
-                }}>
-                  MC Version
-                </span>
+                <span style={label}>MC Version</span>
                 {snapshotCount > 0 && (
                   <button
                     onClick={() => setShowSnapshots(s => !s)}
-                    style={{ display: 'flex', alignItems: 'center', gap: '5px', background: 'none', border: 'none', cursor: 'pointer', padding: '2px 0' }}
-                    title={showSnapshots ? 'Hide snapshots' : `Show ${snapshotCount} snapshot${snapshotCount !== 1 ? 's' : ''}`}
+                    style={{ display: 'flex', alignItems: 'center', gap: '4px', background: 'none', border: 'none', cursor: 'pointer', padding: '2px 0' }}
+                    title={showSnapshots ? 'Hide snapshots' : `Show ${snapshotCount} snapshots`}
                   >
                     <div style={{
-                      width: '26px', height: '14px', borderRadius: '7px',
-                      background: showSnapshots ? 'var(--accent)' : 'var(--border-strong)',
-                      position: 'relative', transition: 'background 0.2s ease', flexShrink: 0,
+                      width: '24px', height: '13px', borderRadius: '7px',
+                      background: showSnapshots ? 'var(--accent)' : 'var(--card-border-hover)',
+                      position: 'relative', transition: 'background 0.2s', flexShrink: 0,
                     }}>
                       <div style={{
-                        position: 'absolute', top: '2px',
-                        left: showSnapshots ? '14px' : '2px',
-                        width: '10px', height: '10px', borderRadius: '50%',
-                        background: 'white', boxShadow: '0 1px 3px rgba(0,0,0,0.2)',
-                        transition: 'left 0.18s ease',
+                        position: 'absolute', top: '2px', left: showSnapshots ? '13px' : '2px',
+                        width: '9px', height: '9px', borderRadius: '50%',
+                        background: 'white', boxShadow: '0 1px 3px rgba(0,0,0,0.4)',
+                        transition: 'left 0.18s',
                       }} />
                     </div>
-                    <span style={{ fontSize: '10px', color: 'var(--text-muted)', fontFamily: 'DM Mono, monospace', whiteSpace: 'nowrap' }}>
-                      snapshots
-                    </span>
+                    <span style={{ fontSize: '10px', color: 'var(--text-3)', fontFamily: 'JetBrains Mono, monospace' }}>snaps</span>
                   </button>
                 )}
               </div>
-              <Dropdown
-                options={mcVersionOptions}
-                value={selectedMcVersion}
-                onChange={v => setSelectedMcVersion(v as string)}
-                placeholder={`${filteredMcVersions.length} available`}
-                searchable
-              />
+              <Dropdown options={filteredMcVersions.map(v => ({ value: v, label: v }))}
+                value={selectedMcVersion} onChange={v => setSelectedMcVersion(v as string)}
+                placeholder={`${filteredMcVersions.length} available`} searchable />
             </div>
             <div>
-              <div style={{
-                fontSize: '11px', fontWeight: 600, letterSpacing: '0.05em',
-                textTransform: 'uppercase', color: 'var(--text-muted)',
-                fontFamily: 'DM Mono, monospace', marginBottom: '6px',
-              }}>
-                Mod Loader
-              </div>
+              <p style={label}>Mod Loader</p>
               <Dropdown
-                options={loaderOptions}
-                value={selectedLoader}
-                onChange={v => setSelectedLoader(v as string)}
+                options={availableLoaders.map(l => ({ value: l, label: l, icon: getLoaderIcon(l, 14) }))}
+                value={selectedLoader} onChange={v => setSelectedLoader(v as string)}
                 placeholder={availableLoaders.length > 0 ? `${availableLoaders.length} available` : 'Pick version first'}
                 searchable={false}
               />
@@ -420,92 +449,42 @@ export function ModDetail({ hit, onClose, contextType }: ModDetailProps) {
 
           <AnimatePresence mode="wait">
             {(selectedMcVersion || selectedLoader) && (
-              <motion.div
-                initial={{ opacity: 0, y: -6 }}
-                animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0, y: -6 }}
-                transition={{ duration: 0.18 }}
-              >
+              <motion.div initial={{ opacity: 0, y: -5 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -5 }} transition={{ duration: 0.16 }}>
                 {matchedVersion ? (
                   <div>
                     <div style={{
-                      display: 'flex', alignItems: 'center', gap: '8px',
-                      padding: '8px 12px',
-                      background: `${accentHex}08`,
-                      border: `1px solid ${accentHex}20`,
-                      borderRadius: '10px', marginBottom: '10px',
+                      display: 'flex', alignItems: 'center', gap: '8px', padding: '8px 12px',
+                      background: `${accentHex}0d`, border: `1px solid ${accentHex}22`,
+                      borderRadius: '9px', marginBottom: '8px',
                     }}>
-                      <div style={{
-                        width: '7px', height: '7px', borderRadius: '50%', flexShrink: 0,
-                        background: VERSION_TYPE_COLOR[matchedVersion.version_type] ?? '#94a3b8',
-                      }} />
-                      <div style={{ flex: 1, minWidth: 0 }}>
-                        <span style={{ fontSize: '12px', fontWeight: 600, color: 'var(--text-primary)', fontFamily: 'DM Mono, monospace' }}>
-                          {matchedVersion.version_number}
-                        </span>
-                        <span style={{ fontSize: '12px', color: 'var(--text-muted)', marginLeft: '8px' }}>
-                          {matchedVersion.name !== matchedVersion.version_number ? matchedVersion.name : ''}
-                        </span>
-                      </div>
-                      <span style={{
-                        fontSize: '10px',
-                        color: VERSION_TYPE_COLOR[matchedVersion.version_type],
-                        background: `${VERSION_TYPE_COLOR[matchedVersion.version_type]}15`,
-                        padding: '2px 7px', borderRadius: '20px', fontWeight: 600, textTransform: 'capitalize',
-                      }}>
+                      <div style={{ width: '7px', height: '7px', borderRadius: '50%', flexShrink: 0, background: VERSION_TYPE_COLOR[matchedVersion.version_type] ?? 'var(--text-3)' }} />
+                      <span style={{ fontSize: '12px', fontWeight: 600, color: 'var(--text)', fontFamily: 'JetBrains Mono, monospace', flex: 1 }}>{matchedVersion.version_number}</span>
+                      <span style={{ fontSize: '10px', color: VERSION_TYPE_COLOR[matchedVersion.version_type], background: `${VERSION_TYPE_COLOR[matchedVersion.version_type]}18`, padding: '2px 7px', borderRadius: '20px', fontWeight: 700, textTransform: 'capitalize' }}>
                         {matchedVersion.version_type}
                       </span>
                     </div>
                     {matchedVersion.files.map(file => (
-                      <button
-                        key={file.filename}
-                        onClick={() => handleDownload(file)}
-                        style={{
-                          width: '100%', display: 'flex', alignItems: 'center', gap: '8px',
-                          padding: '11px 14px',
-                          background: file.primary ? accentHex : 'var(--off-white)',
-                          border: `1px solid ${file.primary ? accentHex : 'var(--border)'}`,
-                          borderRadius: '10px', cursor: 'pointer', marginBottom: '6px',
-                          transition: 'all 0.15s', textAlign: 'left',
-                          boxShadow: file.primary ? `0 4px 12px ${accentHex}40` : 'none',
-                        }}
-                        onMouseEnter={e => {
-                          (e.currentTarget as HTMLElement).style.filter = 'brightness(1.06)';
-                          (e.currentTarget as HTMLElement).style.transform = 'translateY(-1px)';
-                        }}
-                        onMouseLeave={e => {
-                          (e.currentTarget as HTMLElement).style.filter = '';
-                          (e.currentTarget as HTMLElement).style.transform = '';
-                        }}
+                      <button key={file.filename} onClick={() => handleDownload(file)} style={{
+                        width: '100%', display: 'flex', alignItems: 'center', gap: '8px', padding: '10px 13px',
+                        background: file.primary ? accentHex : 'var(--card)',
+                        border: `1px solid ${file.primary ? accentHex : 'var(--card-border)'}`,
+                        borderRadius: '9px', cursor: 'pointer', marginBottom: '5px',
+                        transition: 'all 0.14s', textAlign: 'left',
+                        boxShadow: file.primary ? `0 4px 14px ${accentHex}40` : 'none',
+                      }}
+                        onMouseEnter={e => { (e.currentTarget as HTMLElement).style.filter = 'brightness(1.08)'; }}
+                        onMouseLeave={e => { (e.currentTarget as HTMLElement).style.filter = ''; }}
                       >
-                        <Download size={13} color={file.primary ? 'white' : accentHex} />
-                        <span style={{
-                          fontSize: '12px', flex: 1, overflow: 'hidden',
-                          textOverflow: 'ellipsis', whiteSpace: 'nowrap',
-                          fontFamily: 'DM Mono, monospace',
-                          color: file.primary ? 'white' : 'var(--text-primary)',
-                          fontWeight: file.primary ? 600 : 400,
-                        }}>
-                          {file.filename}
-                        </span>
-                        <span style={{
-                          fontSize: '11px', flexShrink: 0,
-                          color: file.primary ? 'rgba(255,255,255,0.8)' : 'var(--text-muted)',
-                        }}>
-                          {(file.size / 1024 / 1024).toFixed(2)} MB
-                        </span>
-                        {file.primary && <CheckCircle size={13} color="white" />}
+                        <Download size={12} color={file.primary ? 'white' : accentHex} />
+                        <span style={{ fontSize: '11px', flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontFamily: 'JetBrains Mono, monospace', color: file.primary ? 'white' : 'var(--text)', fontWeight: file.primary ? 600 : 400 }}>{file.filename}</span>
+                        <span style={{ fontSize: '10px', flexShrink: 0, color: file.primary ? 'rgba(255,255,255,0.7)' : 'var(--text-3)' }}>{(file.size / 1024 / 1024).toFixed(2)} MB</span>
+                        {file.primary && <CheckCircle size={12} color="white" />}
                       </button>
                     ))}
                   </div>
                 ) : (
-                  <div style={{
-                    display: 'flex', alignItems: 'center', gap: '8px',
-                    padding: '12px', background: 'rgba(239,68,68,0.06)',
-                    border: '1px solid rgba(239,68,68,0.2)', borderRadius: '10px',
-                    fontSize: '13px', color: '#ef4444',
-                  }}>
-                    <AlertTriangle size={14} />
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '11px 13px', background: 'rgba(244,63,94,0.06)', border: '1px solid rgba(244,63,94,0.2)', borderRadius: '9px', fontSize: '12px', color: 'var(--red)' }}>
+                    <AlertTriangle size={13} />
                     No version matches{selectedMcVersion ? ` MC ${selectedMcVersion}` : ''}{selectedLoader ? ` + ${selectedLoader}` : ''}.
                   </div>
                 )}
@@ -514,10 +493,7 @@ export function ModDetail({ hit, onClose, contextType }: ModDetailProps) {
           </AnimatePresence>
 
           {!selectedMcVersion && !selectedLoader && (
-            <div style={{
-              padding: '10px 12px', background: 'var(--off-white)', borderRadius: '10px',
-              fontSize: '12px', color: 'var(--text-muted)', border: '1px dashed var(--border)', textAlign: 'center',
-            }}>
+            <div style={{ padding: '10px 12px', background: 'var(--bg-2)', borderRadius: '9px', fontSize: '11px', color: 'var(--text-3)', border: '1px dashed var(--card-border)', textAlign: 'center', fontFamily: 'JetBrains Mono, monospace' }}>
               Pick a version and loader to find the right download
             </div>
           )}
@@ -526,14 +502,23 @@ export function ModDetail({ hit, onClose, contextType }: ModDetailProps) {
     </div>
   );
 
+  const dependenciesSection = deps.length > 0 ? (
+    <div style={{ marginBottom: '18px' }}>
+      <SectionTitle icon={<Package size={12} />}>Dependencies ({deps.length})</SectionTitle>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '5px' }}>
+        {deps.map(d => <DepCard key={d.project.id} info={d} />)}
+      </div>
+    </div>
+  ) : null;
+
   const categoriesSection = hit.display_categories?.length > 0 ? (
-    <div style={{ marginBottom: '22px' }}>
-      <SectionTitle icon={<Tag size={13} />} label="Categories" />
-      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
+    <div style={{ marginBottom: '18px' }}>
+      <SectionTitle icon={<Tag size={12} />}>Categories</SectionTitle>
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '5px' }}>
         {hit.display_categories.map(cat => (
           <span key={cat} style={{
-            fontSize: '12px', color: accentHex, background: `${accentHex}12`,
-            border: `1px solid ${accentHex}25`, padding: '4px 10px',
+            fontSize: '11px', color: accentHex, background: `${accentHex}12`,
+            border: `1px solid ${accentHex}25`, padding: '3px 9px',
             borderRadius: '20px', fontWeight: 500, textTransform: 'capitalize',
           }}>
             {cat}
@@ -543,375 +528,516 @@ export function ModDetail({ hit, onClose, contextType }: ModDetailProps) {
     </div>
   ) : null;
 
-  const versionsSection = (
+  const versionsTabContent = (
     <div>
-      <SectionTitle icon={<Calendar size={13} />} label={`All Versions (${versions.length})`} />
+      {/* Search */}
+      <div style={{ position: 'relative', marginBottom: '12px' }}>
+        <Search size={13} color="var(--text-3)" style={{ position: 'absolute', left: '11px', top: '50%', transform: 'translateY(-50%)', pointerEvents: 'none' }} />
+        <input
+          value={vTabSearch}
+          onChange={e => setVTabSearch(e.target.value)}
+          placeholder="Search versions…"
+          style={{
+            width: '100%', boxSizing: 'border-box',
+            padding: '8px 32px 8px 32px',
+            background: 'var(--card)', border: '1px solid var(--card-border)',
+            borderRadius: '9px', fontSize: '13px', color: 'var(--text)',
+            fontFamily: 'Instrument Sans, sans-serif', outline: 'none',
+            transition: 'border-color 0.15s',
+          }}
+          onFocus={e => { e.currentTarget.style.borderColor = 'rgba(27,202,142,0.4)'; }}
+          onBlur={e => { e.currentTarget.style.borderColor = 'var(--card-border)'; }}
+        />
+        {vTabSearch && (
+          <button onClick={() => setVTabSearch('')} style={{
+            position: 'absolute', right: '9px', top: '50%', transform: 'translateY(-50%)',
+            background: 'none', border: 'none', cursor: 'pointer', padding: '2px', display: 'flex',
+          }}>
+            <X size={13} color="var(--text-3)" />
+          </button>
+        )}
+      </div>
+
+      {/* Filters */}
+      <div style={{ display: 'flex', gap: '10px', marginBottom: '16px', flexWrap: 'wrap', alignItems: 'flex-end' }}>
+        <div style={{ flex: '0 0 160px' }}>
+          <p style={label}>MC Version</p>
+          <Dropdown
+            options={availableMcVersions.map(v => ({ value: v, label: v }))}
+            value={vTabMc} onChange={v => setVTabMc(v as string)}
+            placeholder="All versions" searchable
+          />
+        </div>
+        <div style={{ flex: '0 0 150px' }}>
+          <p style={label}>Loader</p>
+          <Dropdown
+            options={availableLoaders.map(l => ({ value: l, label: l, icon: getLoaderIcon(l, 14) }))}
+            value={vTabLoader} onChange={v => setVTabLoader(v as string)}
+            placeholder="All loaders" searchable={false}
+          />
+        </div>
+        <div>
+          <p style={label}>Version Type</p>
+          <div style={{ display: 'flex', gap: '4px' }}>
+            {(['release', 'beta', 'alpha'] as const).map(type => {
+              const active = vTabTypes.includes(type);
+              return (
+                <button key={type} onClick={() => setVTabTypes(prev =>
+                  prev.includes(type) ? prev.filter(t => t !== type) : [...prev, type]
+                )} style={{
+                  padding: '5px 10px', borderRadius: '7px', cursor: 'pointer',
+                  border: `1px solid ${active ? VERSION_TYPE_COLOR[type] + '60' : 'var(--card-border)'}`,
+                  background: active ? VERSION_TYPE_COLOR[type] + '18' : 'var(--card)',
+                  color: active ? VERSION_TYPE_COLOR[type] : 'var(--text-3)',
+                  fontSize: '11px', fontWeight: 600, transition: 'all 0.14s',
+                  textTransform: 'capitalize', fontFamily: 'Instrument Sans, sans-serif',
+                }}>
+                  {type}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+        {(vTabMc || vTabLoader || vTabTypes.length < 3 || vTabSearch) && (
+          <button
+            onClick={() => { setVTabMc(''); setVTabLoader(''); setVTabTypes(['release', 'beta', 'alpha']); setVTabSearch(''); }}
+            style={{
+              alignSelf: 'flex-end', padding: '5px 10px',
+              background: 'none', border: '1px solid var(--card-border)',
+              borderRadius: '7px', cursor: 'pointer',
+              fontSize: '11px', color: 'var(--text-3)',
+              fontFamily: 'Instrument Sans, sans-serif', transition: 'all 0.14s',
+            }}
+            onMouseEnter={e => { (e.currentTarget as HTMLElement).style.color = 'var(--text-2)'; (e.currentTarget as HTMLElement).style.borderColor = 'var(--card-border-hover)'; }}
+            onMouseLeave={e => { (e.currentTarget as HTMLElement).style.color = 'var(--text-3)'; (e.currentTarget as HTMLElement).style.borderColor = 'var(--card-border)'; }}
+          >
+            Reset
+          </button>
+        )}
+      </div>
+
+      {/* Count */}
+      <div style={{ fontSize: '11px', color: 'var(--text-3)', marginBottom: '12px', fontFamily: 'JetBrains Mono, monospace' }}>
+        {loading ? 'Loading…' : (
+          <>
+            {tabFilteredVersions.length} version{tabFilteredVersions.length !== 1 ? 's' : ''}
+            {tabFilteredVersions.length !== versions.length && ` of ${versions.length}`}
+          </>
+        )}
+      </div>
+
+      {/* List */}
       {loading ? (
-        <div style={{ padding: '20px', textAlign: 'center' }}>
-          <LoadingSpinner color={accentHex} />
+        <div style={{ padding: '40px', textAlign: 'center' }}>
+          <Loader2 size={22} color={accentHex} style={{ animation: 'spin 0.7s linear infinite' }} />
         </div>
       ) : (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-          {versions.slice(0, 20).map(v => (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+          {tabFilteredVersions.map(v => (
             <div key={v.id} style={{
-              border: '1px solid var(--border)', borderRadius: '12px', overflow: 'hidden',
-              background: expandedVersion === v.id ? 'white' : 'var(--off-white)',
-              transition: 'all 0.15s ease',
+              border: '1px solid var(--card-border)', borderRadius: '10px', overflow: 'hidden',
+              background: expandedVersion === v.id ? 'var(--card-hover)' : 'var(--card)',
+              transition: 'background 0.14s',
             }}>
               <button
                 onClick={() => setExpandedVersion(expandedVersion === v.id ? null : v.id)}
-                style={{
-                  width: '100%', display: 'flex', alignItems: 'center', gap: '10px',
-                  padding: '11px 14px', background: 'transparent', border: 'none',
-                  cursor: 'pointer', textAlign: 'left',
-                }}
+                style={{ width: '100%', display: 'flex', alignItems: 'center', gap: '10px', padding: '12px 14px', background: 'transparent', border: 'none', cursor: 'pointer', textAlign: 'left' }}
               >
-                <div style={{
-                  width: '8px', height: '8px', borderRadius: '50%', flexShrink: 0,
-                  background: VERSION_TYPE_COLOR[v.version_type] ?? '#94a3b8',
-                  boxShadow: `0 0 0 2px ${VERSION_TYPE_COLOR[v.version_type] ?? '#94a3b8'}30`,
-                }} />
+                <div style={{ width: '8px', height: '8px', borderRadius: '50%', flexShrink: 0, background: VERSION_TYPE_COLOR[v.version_type] ?? 'var(--text-3)', boxShadow: `0 0 0 2px ${(VERSION_TYPE_COLOR[v.version_type] ?? '#888') + '30'}` }} />
                 <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                    <span style={{ fontSize: '13px', fontWeight: 600, color: 'var(--text-primary)', fontFamily: 'DM Mono, monospace' }}>
-                      {v.version_number}
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
+                    <span style={{ fontSize: '13px', fontWeight: 700, color: 'var(--text)', fontFamily: 'JetBrains Mono, monospace' }}>{v.version_number}</span>
+                    <span style={{ fontSize: '10px', fontWeight: 700, textTransform: 'capitalize', color: VERSION_TYPE_COLOR[v.version_type], background: (VERSION_TYPE_COLOR[v.version_type] ?? '#888') + '18', border: `1px solid ${(VERSION_TYPE_COLOR[v.version_type] ?? '#888') + '30'}`, padding: '1px 7px', borderRadius: '20px' }}>
+                      {v.version_type}
                     </span>
-                    {v.featured && (
-                      <span style={{ fontSize: '10px', color: accentHex, background: `${accentHex}15`, padding: '1px 6px', borderRadius: '20px', fontWeight: 600 }}>
-                        featured
-                      </span>
-                    )}
+                    {v.featured && <span style={{ fontSize: '10px', color: accentHex, background: `${accentHex}14`, border: `1px solid ${accentHex}25`, padding: '1px 6px', borderRadius: '20px', fontWeight: 600 }}>featured</span>}
                   </div>
-                  <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '1px' }}>
-                    {v.loaders.join(', ')} · {v.game_versions.slice(-1)[0]}{v.game_versions.length > 1 ? `–${v.game_versions[0]}` : ''} · {formatDate(v.date_published)}
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginTop: '4px', flexWrap: 'wrap' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '3px' }}>
+                      {v.loaders.slice(0, 3).map(l => <span key={l} style={{ display: 'flex' }}>{getLoaderIcon(l, 12)}</span>)}
+                      <span style={{ fontSize: '10px', color: 'var(--text-3)', fontFamily: 'JetBrains Mono, monospace' }}>{v.loaders.join(', ')}</span>
+                    </div>
+                    <span style={{ fontSize: '10px', color: 'var(--card-border-hover)' }}>·</span>
+                    <span style={{ fontSize: '10px', color: 'var(--text-3)', fontFamily: 'JetBrains Mono, monospace' }}>
+                      {v.game_versions.length === 1 ? v.game_versions[0] : `${v.game_versions[v.game_versions.length - 1]}–${v.game_versions[0]}`}
+                    </span>
+                    <span style={{ fontSize: '10px', color: 'var(--card-border-hover)' }}>·</span>
+                    <span style={{ fontSize: '10px', color: 'var(--text-3)', fontFamily: 'JetBrains Mono, monospace' }}>{formatDate(v.date_published)}</span>
                   </div>
                 </div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                  <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>{formatDownloads(v.downloads)}</span>
-                  <motion.span animate={{ rotate: expandedVersion === v.id ? 180 : 0 }} transition={{ duration: 0.2 }} style={{ display: 'flex' }}>
-                    <ChevronDown size={13} color="var(--text-muted)" />
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexShrink: 0 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '3px', fontSize: '11px', color: 'var(--text-3)', fontFamily: 'JetBrains Mono, monospace' }}>
+                    <Download size={11} />{formatDownloads(v.downloads)}
+                  </div>
+                  <motion.span animate={{ rotate: expandedVersion === v.id ? 180 : 0 }} transition={{ duration: 0.18 }} style={{ display: 'flex' }}>
+                    <ChevronDown size={13} color="var(--text-3)" />
                   </motion.span>
                 </div>
               </button>
 
               <AnimatePresence>
                 {expandedVersion === v.id && (
-                  <motion.div
-                    initial={{ height: 0, opacity: 0 }}
-                    animate={{ height: 'auto', opacity: 1 }}
-                    exit={{ height: 0, opacity: 0 }}
-                    transition={{ duration: 0.2 }}
-                    style={{ overflow: 'hidden', borderTop: '1px solid var(--border)' }}
+                  <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }} exit={{ height: 0, opacity: 0 }} transition={{ duration: 0.18 }}
+                    style={{ overflow: 'hidden', borderTop: '1px solid var(--card-border)' }}
                   >
                     <div style={{ padding: '12px 14px' }}>
-                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px', marginBottom: '10px' }}>
-                        {v.game_versions.slice(0, 10).map(gv => (
-                          <span key={gv} style={{
-                            fontSize: '11px', color: 'var(--text-secondary)', background: 'white',
-                            border: '1px solid var(--border)', padding: '2px 7px',
-                            borderRadius: '4px', fontFamily: 'DM Mono, monospace',
-                          }}>
-                            {gv}
-                          </span>
-                        ))}
-                        {v.game_versions.length > 10 && (
-                          <span style={{ fontSize: '11px', color: 'var(--text-muted)', padding: '2px 7px' }}>
-                            +{v.game_versions.length - 10} more
-                          </span>
-                        )}
-                      </div>
+                      {v.game_versions.length > 1 && (
+                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '3px', marginBottom: '10px' }}>
+                          {v.game_versions.slice(0, 12).map(gv => (
+                            <span key={gv} style={{ fontSize: '10px', color: 'var(--text-2)', background: 'var(--bg-2)', border: '1px solid var(--card-border)', padding: '2px 7px', borderRadius: '4px', fontFamily: 'JetBrains Mono, monospace' }}>{gv}</span>
+                          ))}
+                          {v.game_versions.length > 12 && <span style={{ fontSize: '10px', color: 'var(--text-3)', padding: '2px 6px' }}>+{v.game_versions.length - 12} more</span>}
+                        </div>
+                      )}
+                      {v.changelog && (
+                        <div style={{ fontSize: '11px', color: 'var(--text-3)', lineHeight: 1.55, marginBottom: '10px', fontFamily: 'Instrument Sans, sans-serif', maxHeight: '64px', overflow: 'hidden', WebkitMaskImage: 'linear-gradient(to bottom, black 50%, transparent)' }}>
+                          {v.changelog.replace(/^#+\s*/gm, '').substring(0, 280)}
+                        </div>
+                      )}
                       {v.files.map(file => (
-                        <button
-                          key={file.filename}
-                          onClick={() => handleDownload(file)}
-                          style={{
-                            width: '100%', display: 'flex', alignItems: 'center', gap: '8px',
-                            padding: '9px 12px', background: 'var(--off-white)',
-                            border: '1px solid var(--border)', borderRadius: '8px',
-                            cursor: 'pointer', marginBottom: '5px', transition: 'all 0.12s', textAlign: 'left',
-                          }}
-                          onMouseEnter={e => {
-                            (e.currentTarget as HTMLElement).style.background = `${accentHex}10`;
-                            (e.currentTarget as HTMLElement).style.borderColor = `${accentHex}40`;
-                          }}
-                          onMouseLeave={e => {
-                            (e.currentTarget as HTMLElement).style.background = 'var(--off-white)';
-                            (e.currentTarget as HTMLElement).style.borderColor = 'var(--border)';
-                          }}
+                        <button key={file.filename} onClick={() => handleDownload(file)} style={{
+                          width: '100%', display: 'flex', alignItems: 'center', gap: '8px',
+                          padding: '10px 12px',
+                          background: file.primary ? `${accentHex}12` : 'var(--card)',
+                          border: `1px solid ${file.primary ? `${accentHex}30` : 'var(--card-border)'}`,
+                          borderRadius: '8px', cursor: 'pointer', marginBottom: '4px',
+                          transition: 'all 0.12s', textAlign: 'left',
+                        }}
+                          onMouseEnter={e => { (e.currentTarget as HTMLElement).style.borderColor = `${accentHex}50`; (e.currentTarget as HTMLElement).style.background = `${accentHex}1c`; }}
+                          onMouseLeave={e => { (e.currentTarget as HTMLElement).style.borderColor = file.primary ? `${accentHex}30` : 'var(--card-border)'; (e.currentTarget as HTMLElement).style.background = file.primary ? `${accentHex}12` : 'var(--card)'; }}
                         >
-                          <Download size={13} color={accentHex} />
-                          <span style={{
-                            fontSize: '12px', color: 'var(--text-primary)', flex: 1,
-                            overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
-                            fontFamily: 'DM Mono, monospace',
-                          }}>
-                            {file.filename}
-                          </span>
-                          <span style={{ fontSize: '11px', color: 'var(--text-muted)', flexShrink: 0 }}>
-                            {(file.size / 1024 / 1024).toFixed(2)} MB
-                          </span>
+                          <Download size={12} color={file.primary ? accentHex : 'var(--text-3)'} />
+                          <span style={{ fontSize: '11px', flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontFamily: 'JetBrains Mono, monospace', color: 'var(--text)' }}>{file.filename}</span>
+                          <span style={{ fontSize: '10px', color: 'var(--text-3)', flexShrink: 0, fontFamily: 'JetBrains Mono, monospace' }}>{(file.size / 1024 / 1024).toFixed(2)} MB</span>
                           {file.primary && <CheckCircle size={12} color={accentHex} />}
                         </button>
                       ))}
-                      {v.changelog && (
-                        <div style={{
-                          marginTop: '8px', padding: '10px', background: 'var(--surface)',
-                          borderRadius: '8px', fontSize: '12px', color: 'var(--text-secondary)',
-                          lineHeight: 1.6, maxHeight: '80px', overflowY: 'auto',
-                          fontFamily: 'DM Mono, monospace',
-                        }}>
-                          {v.changelog.slice(0, 300)}{v.changelog.length > 300 ? '...' : ''}
-                        </div>
-                      )}
                     </div>
                   </motion.div>
                 )}
               </AnimatePresence>
             </div>
           ))}
-
-          {versions.length > 20 && (
-            <a
-              href={`https://modrinth.com/${hit.project_type}/${hit.slug}/versions`}
-              target="_blank" rel="noopener noreferrer"
-              style={{
-                display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px',
-                padding: '10px', borderRadius: '10px', border: '1px dashed var(--border-strong)',
-                fontSize: '13px', color: 'var(--text-muted)', textDecoration: 'none', transition: 'all 0.15s',
-              }}
-              onMouseEnter={e => { (e.currentTarget as HTMLElement).style.color = 'var(--text-secondary)'; }}
-              onMouseLeave={e => { (e.currentTarget as HTMLElement).style.color = 'var(--text-muted)'; }}
-            >
-              View {versions.length - 20} more on Modrinth <ExternalLink size={12} />
-            </a>
+          {tabFilteredVersions.length === 0 && (
+            <div style={{ padding: '40px', textAlign: 'center', border: '1px dashed var(--card-border)', borderRadius: '12px', fontSize: '13px', color: 'var(--text-3)', fontFamily: 'Instrument Sans, sans-serif' }}>
+              No versions match the current filters.
+            </div>
           )}
         </div>
       )}
     </div>
   );
 
-  // ─── Header JSX ──────────────────────────────────────────────────────────
+  // ── Lightbox (shared between modal and page) ──────────────────────
+  const lightboxMeta = lightboxImg ? galleryMeta.find(g => imgHash(g.url) === imgHash(lightboxImg)) : null;
 
-  const header = (
+  const lightbox = lightboxImg ? (
+    <motion.div
+      initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+      onClick={() => setLightboxImg(null)}
+      style={{ position: 'fixed', inset: 0, zIndex: 400, background: 'rgba(0,0,0,0.92)', backdropFilter: 'blur(16px)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '32px', cursor: 'zoom-out' }}
+    >
+      <motion.div
+        initial={{ scale: 0.92, opacity: 0 }}
+        animate={{ scale: 1, opacity: 1 }}
+        exit={{ scale: 0.92, opacity: 0 }}
+        transition={{ duration: 0.18, ease: [0.4, 0, 0.2, 1] }}
+        onClick={e => e.stopPropagation()}
+        style={{ position: 'relative', width: 'min(92vw, 1400px)', cursor: 'default', borderRadius: '10px', overflow: 'hidden', boxShadow: '0 32px 100px rgba(0,0,0,0.8)' }}
+      >
+        <img
+          src={lightboxImg}
+          alt="Screenshot"
+          style={{ width: '100%', height: 'auto', maxHeight: '90vh', objectFit: 'contain', display: 'block' }}
+        />
+
+        {/* Top-right buttons */}
+        <div style={{ position: 'absolute', top: '12px', right: '12px', display: 'flex', gap: '6px' }}>
+          <button
+            onClick={() => {
+              fetch(lightboxImg).then(r => r.blob()).then(blob => {
+                const blobUrl = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = blobUrl;
+                a.download = lightboxImg.split('/').pop() ?? 'screenshot';
+                document.body.appendChild(a); a.click();
+                document.body.removeChild(a);
+                setTimeout(() => URL.revokeObjectURL(blobUrl), 1000);
+              });
+            }}
+            title="Download"
+            style={{ width: '34px', height: '34px', borderRadius: '8px', background: 'rgba(0,0,0,0.55)', backdropFilter: 'blur(8px)', border: '1px solid rgba(255,255,255,0.15)', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', transition: 'background 0.14s' }}
+            onMouseEnter={e => { (e.currentTarget as HTMLElement).style.background = 'rgba(0,0,0,0.8)'; }}
+            onMouseLeave={e => { (e.currentTarget as HTMLElement).style.background = 'rgba(0,0,0,0.55)'; }}
+          >
+            <Download size={14} color="white" />
+          </button>
+          <button
+            onClick={() => setLightboxImg(null)}
+            title="Close"
+            style={{ width: '34px', height: '34px', borderRadius: '8px', background: 'rgba(0,0,0,0.55)', backdropFilter: 'blur(8px)', border: '1px solid rgba(255,255,255,0.15)', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', transition: 'background 0.14s' }}
+            onMouseEnter={e => { (e.currentTarget as HTMLElement).style.background = 'rgba(0,0,0,0.8)'; }}
+            onMouseLeave={e => { (e.currentTarget as HTMLElement).style.background = 'rgba(0,0,0,0.55)'; }}
+          >
+            <X size={14} color="white" />
+          </button>
+        </div>
+
+        {/* Bottom overlay: title + description */}
+        {(lightboxMeta?.title || lightboxMeta?.description) && (
+          <div style={{ position: 'absolute', bottom: 0, left: 0, right: 0, padding: '48px 18px 16px', background: 'linear-gradient(to top, rgba(0,0,0,0.82) 0%, transparent 100%)', pointerEvents: 'none' }}>
+            {lightboxMeta.title && (
+              <div style={{ fontSize: '14px', fontWeight: 700, color: 'white', fontFamily: 'Instrument Sans, sans-serif', marginBottom: lightboxMeta.description ? '4px' : 0 }}>
+                {lightboxMeta.title}
+              </div>
+            )}
+            {lightboxMeta.description && (
+              <div style={{ fontSize: '12px', color: 'rgba(255,255,255,0.72)', fontFamily: 'Instrument Sans, sans-serif', lineHeight: 1.45 }}>
+                {lightboxMeta.description}
+              </div>
+            )}
+          </div>
+        )}
+      </motion.div>
+    </motion.div>
+  ) : null;
+
+  // ── Screenshots tab content ───────────────────────────────────────
+  const screenshotsTabContent = (
+    <div>
+      <div style={{ marginBottom: '14px', fontSize: '11px', color: 'var(--text-3)', fontFamily: 'JetBrains Mono, monospace' }}>
+        {gallery.length} screenshot{gallery.length !== 1 ? 's' : ''}
+      </div>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(260px, 1fr))', gap: '10px' }}>
+        {gallery.map((url, i) => {
+          const meta = galleryMeta.find(g => imgHash(g.url) === imgHash(url));
+          const hovered = hoveredScreenshot === i;
+          return (
+            <div key={i}
+              onClick={() => setLightboxImg(fullRes(url))}
+              onMouseEnter={() => setHoveredScreenshot(i)}
+              onMouseLeave={() => setHoveredScreenshot(null)}
+              style={{
+                position: 'relative', borderRadius: '10px', overflow: 'hidden', cursor: 'zoom-in',
+                border: `1px solid ${hovered ? 'var(--card-border-hover)' : 'var(--card-border)'}`,
+                transition: 'all 0.15s', aspectRatio: '16/9', background: 'var(--bg-2)',
+                transform: hovered ? 'scale(1.01)' : '',
+                boxShadow: hovered ? '0 8px 32px rgba(0,0,0,0.4)' : '',
+              }}
+            >
+              <img src={url} alt={meta?.title ?? `Screenshot ${i + 1}`} style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />
+              {(meta?.title || meta?.description) && (
+                <div style={{
+                  position: 'absolute', bottom: 0, left: 0, right: 0,
+                  padding: '36px 12px 10px',
+                  background: 'linear-gradient(to top, rgba(0,0,0,0.78) 0%, transparent 100%)',
+                  opacity: hovered ? 1 : 0, transition: 'opacity 0.18s',
+                  pointerEvents: 'none',
+                }}>
+                  {meta.title && <div style={{ fontSize: '12px', fontWeight: 700, color: 'white', fontFamily: 'Instrument Sans, sans-serif', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{meta.title}</div>}
+                  {meta.description && <div style={{ fontSize: '11px', color: 'rgba(255,255,255,0.7)', fontFamily: 'Instrument Sans, sans-serif', marginTop: '2px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{meta.description}</div>}
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+
+  // ── Tab bar ───────────────────────────────────────────────────────
+  const tabs: { id: 'about' | 'screenshots' | 'versions'; label: string }[] = [
+    { id: 'about',    label: 'About' },
+    ...(gallery.length > 0 ? [{ id: 'screenshots' as const, label: `Screenshots (${gallery.length})` }] : []),
+    { id: 'versions', label: `Versions${versions.length ? ` (${versions.length})` : ''}` },
+  ];
+
+  const tabBar = (
     <div style={{
-      position: 'sticky', top: 0,
-      background: 'rgba(255,255,255,0.92)', backdropFilter: 'blur(20px)',
-      borderBottom: '1px solid var(--border)', padding: '18px 22px',
-      display: 'flex', alignItems: 'center', gap: '14px',
-      zIndex: 10, borderRadius: fullscreen ? '0' : '22px 22px 0 0',
+      display: 'flex',
+      borderBottom: '1px solid var(--card-border)',
+      padding: `0 ${mode === 'page' ? '40px' : '28px'}`,
+      background: mode === 'modal' ? 'rgba(10,11,18,0.97)' : 'transparent',
       flexShrink: 0,
     }}>
+      {tabs.map(tab => (
+        <button key={tab.id} onClick={() => setActiveTab(tab.id)}
+          style={{
+            padding: '12px 4px', marginRight: '20px',
+            background: 'none', border: 'none', cursor: 'pointer',
+            fontSize: '13px', fontWeight: activeTab === tab.id ? 700 : 500,
+            color: activeTab === tab.id ? 'var(--text)' : 'var(--text-3)',
+            borderBottom: `2px solid ${activeTab === tab.id ? 'var(--accent)' : 'transparent'}`,
+            marginBottom: '-1px', transition: 'all 0.15s',
+            fontFamily: 'Instrument Sans, sans-serif',
+          }}
+          onMouseEnter={e => { if (activeTab !== tab.id) (e.currentTarget as HTMLElement).style.color = 'var(--text-2)'; }}
+          onMouseLeave={e => { if (activeTab !== tab.id) (e.currentTarget as HTMLElement).style.color = 'var(--text-3)'; }}
+        >
+          {tab.label}
+        </button>
+      ))}
+    </div>
+  );
+
+  // ── Content (two columns) ─────────────────────────────────────────
+  const twoColumnContent = (
+    <div style={{ display: 'flex', flex: 1, overflow: mode === 'modal' ? 'hidden' : 'visible', minHeight: 0 }}>
+      {/* Left: tabbed content */}
       <div style={{
-        width: '48px', height: '48px', borderRadius: '12px', overflow: 'hidden', flexShrink: 0,
-        background: `linear-gradient(135deg, ${accentHex}22, ${accentHex}08)`,
-        border: `1px solid ${accentHex}30`,
+        flex: 1, borderRight: '1px solid var(--card-border)',
+        display: 'flex', flexDirection: 'column',
+        overflow: mode === 'modal' ? 'hidden' : 'visible',
+      }}>
+        {tabBar}
+        <div style={{
+          flex: 1, overflowY: mode === 'modal' ? 'auto' : 'visible',
+          padding: mode === 'page' ? '28px 40px 60px' : '20px 28px',
+        }}>
+          {activeTab === 'about' ? (
+            <div style={{ maxWidth: '740px' }}>
+              {gallerySection}
+              <h3 style={{ fontSize: '11px', fontWeight: 700, color: 'var(--text-3)', letterSpacing: '0.07em', textTransform: 'uppercase', marginBottom: '14px', fontFamily: 'JetBrains Mono, monospace' }}>
+                About
+              </h3>
+              {translating && (
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '12px', color: 'var(--text-3)', fontSize: '12px' }}>
+                  <Loader2 size={13} color="var(--accent)" style={{ animation: 'spin 0.8s linear infinite' }} /> Translating…
+                </div>
+              )}
+              {projectBody || translatedBody
+                ? <MarkdownBody content={translatedBody ?? projectBody!} accent={accentHex} />
+                : <p style={{ fontSize: '14px', color: 'var(--text-2)', lineHeight: 1.75 }}>{translatedDesc ?? hit.description}</p>
+              }
+              {translateBtn}
+            </div>
+          ) : activeTab === 'screenshots' ? screenshotsTabContent
+          : versionsTabContent}
+        </div>
+      </div>
+      {/* Right: interactive */}
+      <div style={{
+        width: '380px', flexShrink: 0,
+        overflowY: mode === 'modal' ? 'auto' : 'visible',
+        padding: mode === 'page' ? '32px 28px 60px' : '20px',
+        background: 'rgba(7,8,13,0.4)',
+      }}>
+        {statsSection}
+        {downloadSection}
+        {dependenciesSection}
+        {categoriesSection}
+        <a href={`https://modrinth.com/${hit.project_type}/${hit.slug}`} target="_blank" rel="noopener noreferrer"
+          style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px', padding: '10px', borderRadius: '10px', border: '1px solid var(--card-border)', fontSize: '12px', fontWeight: 500, color: 'var(--text-3)', textDecoration: 'none', transition: 'all 0.14s', marginTop: '8px' }}
+          onMouseEnter={e => { (e.currentTarget as HTMLElement).style.color = 'var(--text-2)'; (e.currentTarget as HTMLElement).style.borderColor = 'var(--card-border-hover)'; }}
+          onMouseLeave={e => { (e.currentTarget as HTMLElement).style.color = 'var(--text-3)'; (e.currentTarget as HTMLElement).style.borderColor = 'var(--card-border)'; }}
+        >
+          <ExternalLink size={12} /> View on Modrinth
+        </a>
+      </div>
+    </div>
+  );
+
+  // ── Page mode: full page, no modal chrome ─────────────────────────
+  if (mode === 'page') {
+    return (
+      <>
+        <AnimatePresence>{lightboxImg && lightbox}</AnimatePresence>
+        {/* Page header bar */}
+        <div style={{
+          borderBottom: '1px solid var(--card-border)',
+          background: 'rgba(7,8,13,0.6)', backdropFilter: 'blur(20px)',
+          padding: '16px 24px',
+        }}>
+          <div style={{ maxWidth: '1440px', margin: '0 auto', display: 'flex', alignItems: 'center', gap: '14px' }}>
+            <div style={{
+              width: '42px', height: '42px', borderRadius: '10px', overflow: 'hidden', flexShrink: 0,
+              background: `linear-gradient(135deg, ${accentHex}20, ${accentHex}08)`,
+              border: `1px solid ${accentHex}28`,
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+            }}>
+              {hit.icon_url && !imgError
+                ? <img src={hit.icon_url} alt={hit.title} onError={() => setImgError(true)} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                : <Package size={20} color={accentHex} />}
+            </div>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <h1 style={{ fontFamily: 'Instrument Sans, sans-serif', fontSize: '18px', fontWeight: 700, color: 'var(--text)', letterSpacing: '-0.02em', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                {hit.title}
+              </h1>
+              {hit.author && <p style={{ fontSize: '12px', color: 'var(--text-3)' }}>by {hit.author}</p>}
+            </div>
+          </div>
+        </div>
+        <div style={{ maxWidth: '1440px', margin: '0 auto', flex: 1, display: 'flex', flexDirection: 'column' }}>
+          {twoColumnContent}
+        </div>
+      </>
+    );
+  }
+
+  // ── Modal mode ─────────────────────────────────────────────────────
+  const modalHeader = (
+    <div style={{
+      position: 'sticky', top: 0,
+      background: 'rgba(10,11,18,0.94)', backdropFilter: 'blur(20px)',
+      borderBottom: '1px solid var(--card-border)',
+      padding: '16px 20px',
+      display: 'flex', alignItems: 'center', gap: '12px',
+      zIndex: 10, borderRadius: '16px 16px 0 0', flexShrink: 0,
+    }}>
+      <div style={{
+        width: '40px', height: '40px', borderRadius: '10px', overflow: 'hidden', flexShrink: 0,
+        background: `linear-gradient(135deg, ${accentHex}20, ${accentHex}08)`,
+        border: `1px solid ${accentHex}28`,
         display: 'flex', alignItems: 'center', justifyContent: 'center',
       }}>
-        {hit.icon_url && !imgError ? (
-          <img src={hit.icon_url} alt={hit.title} onError={() => setImgError(true)}
-            style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-        ) : (
-          <Package size={22} color={accentHex} />
-        )}
+        {hit.icon_url && !imgError
+          ? <img src={hit.icon_url} alt={hit.title} onError={() => setImgError(true)} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+          : <Package size={18} color={accentHex} />}
       </div>
       <div style={{ flex: 1, minWidth: 0 }}>
-        <h2 style={{
-          fontFamily: 'Syne, sans-serif', fontSize: '17px', fontWeight: 800,
-          color: 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
-        }}>
-          {hit.title}
-        </h2>
-        <p style={{ fontSize: '12px', color: 'var(--text-muted)' }}>by {hit.author}</p>
+        <h2 style={{ fontFamily: 'Instrument Sans, sans-serif', fontSize: '16px', fontWeight: 700, color: 'var(--text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{hit.title}</h2>
+        <p style={{ fontSize: '11px', color: 'var(--text-3)' }}>by {hit.author}</p>
       </div>
-      <div style={{ display: 'flex', gap: '6px', flexShrink: 0 }}>
-        <button
-          onClick={() => setFullscreen(f => { const next = !f; localStorage.setItem('detail-fullscreen', String(next)); return next; })}
-          style={{
-            width: '32px', height: '32px', borderRadius: '50%',
-            background: 'var(--surface)', border: '1px solid var(--border)',
-            display: 'flex', alignItems: 'center', justifyContent: 'center',
-            cursor: 'pointer', transition: 'all 0.15s',
-          }}
-          title={fullscreen ? 'Exit fullscreen' : 'Fullscreen'}
-          onMouseEnter={e => (e.currentTarget as HTMLElement).style.background = 'var(--surface-hover)'}
-          onMouseLeave={e => (e.currentTarget as HTMLElement).style.background = 'var(--surface)'}
-        >
-          {fullscreen ? <Minimize2 size={13} color="var(--text-secondary)" /> : <Maximize2 size={13} color="var(--text-secondary)" />}
-        </button>
-        <button
-          onClick={onClose}
-          style={{
-            width: '32px', height: '32px', borderRadius: '50%',
-            background: 'var(--surface)', border: '1px solid var(--border)',
-            display: 'flex', alignItems: 'center', justifyContent: 'center',
-            cursor: 'pointer', transition: 'all 0.15s',
-          }}
-          onMouseEnter={e => (e.currentTarget as HTMLElement).style.background = 'var(--surface-hover)'}
-          onMouseLeave={e => (e.currentTarget as HTMLElement).style.background = 'var(--surface)'}
-        >
-          <X size={14} color="var(--text-secondary)" />
-        </button>
-      </div>
-    </div>
-  );
-
-  const footer = (
-    <div style={{ padding: '16px 22px', borderTop: '1px solid var(--border)', display: 'flex', gap: '10px', flexShrink: 0 }}>
-      <a
-        href={`https://modrinth.com/${hit.project_type}/${hit.slug}`}
-        target="_blank" rel="noopener noreferrer"
+      <button
+        onClick={onClose}
         style={{
-          flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px',
-          padding: '10px', borderRadius: '10px', border: '1px solid var(--border-strong)',
-          fontSize: '13px', fontWeight: 500, color: 'var(--text-secondary)', textDecoration: 'none', transition: 'all 0.15s',
+          width: '30px', height: '30px', borderRadius: '50%',
+          background: 'var(--card)', border: '1px solid var(--card-border)',
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          cursor: 'pointer', transition: 'all 0.14s', flexShrink: 0,
         }}
-        onMouseEnter={e => {
-          (e.currentTarget as HTMLElement).style.background = 'var(--surface-hover)';
-          (e.currentTarget as HTMLElement).style.color = 'var(--text-primary)';
-        }}
-        onMouseLeave={e => {
-          (e.currentTarget as HTMLElement).style.background = 'transparent';
-          (e.currentTarget as HTMLElement).style.color = 'var(--text-secondary)';
-        }}
+        onMouseEnter={e => (e.currentTarget as HTMLElement).style.background = 'var(--card-hover)'}
+        onMouseLeave={e => (e.currentTarget as HTMLElement).style.background = 'var(--card)'}
       >
-        <ExternalLink size={13} /> View on Modrinth
-      </a>
+        <X size={13} color="var(--text-3)" />
+      </button>
     </div>
   );
-
-  // ─── Render ───────────────────────────────────────────────────────────────
 
   return (
     <AnimatePresence>
-      {/* Image lightbox */}
-      {lightboxImg && (
-        <motion.div
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          exit={{ opacity: 0 }}
-          onClick={() => setLightboxImg(null)}
-          style={{
-            position: 'fixed', inset: 0, zIndex: 300,
-            background: 'rgba(0,0,0,0.85)', backdropFilter: 'blur(8px)',
-            display: 'flex', alignItems: 'center', justifyContent: 'center',
-            padding: '24px', cursor: 'zoom-out',
-          }}
-        >
-          <img src={lightboxImg} alt="Screenshot"
-            style={{ maxWidth: '100%', maxHeight: '100%', borderRadius: '14px', boxShadow: '0 24px 80px rgba(0,0,0,0.6)' }} />
-        </motion.div>
-      )}
-
+      {lightboxImg && lightbox}
       <motion.div
-        initial={{ opacity: 0 }}
-        animate={{ opacity: 1 }}
-        exit={{ opacity: 0 }}
-        transition={{ duration: 0.2 }}
+        initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.18 }}
         onClick={onClose}
-        style={{
-          position: 'fixed', inset: 0,
-          background: 'rgba(15, 23, 42, 0.4)', backdropFilter: 'blur(4px)',
-          zIndex: 100, display: 'flex',
-          alignItems: fullscreen ? 'stretch' : 'flex-start',
-          justifyContent: fullscreen ? 'stretch' : 'flex-end',
-          padding: fullscreen ? '0' : '16px',
-        }}
+        style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', backdropFilter: 'blur(6px)', zIndex: 100, display: 'flex', alignItems: 'stretch', justifyContent: 'flex-end', padding: '12px' }}
       >
         <motion.div
-          initial={{ opacity: 0, x: fullscreen ? 0 : 60, scale: 0.96 }}
+          initial={{ opacity: 0, x: 48, scale: 0.97 }}
           animate={{ opacity: 1, x: 0, scale: 1 }}
-          exit={{ opacity: 0, x: fullscreen ? 0 : 60, scale: 0.96 }}
-          transition={{ duration: 0.3, ease: [0.4, 0, 0.2, 1] }}
+          exit={{ opacity: 0, x: 48, scale: 0.97 }}
+          transition={{ duration: 0.28, ease: [0.4, 0, 0.2, 1] }}
           onClick={e => e.stopPropagation()}
-          layout
           style={{
-            width: '100%', maxWidth: fullscreen ? '100%' : '480px',
-            height: fullscreen ? '100vh' : 'calc(100vh - 32px)',
-            overflowY: fullscreen ? 'hidden' : 'auto',
-            background: 'rgba(255,255,255,0.97)', backdropFilter: 'blur(24px)',
-            borderRadius: fullscreen ? '0' : '22px',
-            border: '1px solid rgba(255,255,255,1)',
-            boxShadow: '0 24px 80px rgba(0,0,0,0.16), 0 8px 24px rgba(0,0,0,0.08)',
-            display: 'flex', flexDirection: 'column',
+            width: '100%', maxWidth: '840px', height: '100%',
+            background: 'rgba(10,11,18,0.97)', backdropFilter: 'blur(28px)',
+            borderRadius: '16px', border: '1px solid var(--card-border)',
+            boxShadow: '0 24px 80px rgba(0,0,0,0.6), inset 0 1px 0 rgba(255,255,255,0.06)',
+            display: 'flex', flexDirection: 'column', overflow: 'hidden',
           }}
         >
-          {header}
-
-          {fullscreen ? (
-            // ── Two-column fullscreen layout ──────────────────────────────
-            <div style={{ display: 'flex', flex: 1, overflow: 'hidden' }}>
-              {/* Left: markdown body */}
-              <div style={{
-                flex: 1, overflowY: 'auto', padding: '28px 36px',
-                borderRight: '1px solid var(--border)',
-              }}>
-                <div style={{ maxWidth: '720px' }}>
-                  {gallery.length > 0 && (
-                    <div style={{ marginBottom: '24px' }}>
-                      <h3 style={{ fontFamily: 'Syne, sans-serif', fontSize: '13px', fontWeight: 700, color: 'var(--text-muted)', letterSpacing: '0.07em', textTransform: 'uppercase', marginBottom: '12px' }}>
-                        Screenshots
-                      </h3>
-                      <div style={{ display: 'flex', gap: '8px', overflowX: 'auto', paddingBottom: '4px' }}>
-                        {gallery.map((url, i) => (
-                          <div key={i} onClick={() => setLightboxImg(url)}
-                            style={{ flexShrink: 0, width: '240px', height: '135px', borderRadius: '10px', overflow: 'hidden', border: '1px solid var(--border)', cursor: 'pointer', transition: 'transform 0.15s, box-shadow 0.15s' }}
-                            onMouseEnter={e => { (e.currentTarget as HTMLElement).style.transform = 'scale(1.02)'; (e.currentTarget as HTMLElement).style.boxShadow = '0 4px 16px rgba(0,0,0,0.14)'; }}
-                            onMouseLeave={e => { (e.currentTarget as HTMLElement).style.transform = ''; (e.currentTarget as HTMLElement).style.boxShadow = ''; }}
-                          >
-                            <img src={url} alt={`Screenshot ${i + 1}`} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-                  <h3 style={{
-                    fontFamily: 'Syne, sans-serif', fontSize: '13px', fontWeight: 700,
-                    color: 'var(--text-muted)', letterSpacing: '0.07em', textTransform: 'uppercase',
-                    marginBottom: '16px',
-                  }}>
-                    About
-                  </h3>
-                  {translating && (
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '12px', color: 'var(--text-muted)', fontSize: '12px' }}>
-                      <Loader2 size={13} style={{ animation: 'spin 0.8s linear infinite' }} />
-                      Translating...
-                    </div>
-                  )}
-                  {projectBody || translatedBody ? (
-                    <MarkdownBody content={translatedBody ?? projectBody!} accent={accentHex} />
-                  ) : (
-                    <p style={{ fontSize: '14px', color: 'var(--text-secondary)', lineHeight: 1.75 }}>
-                      {translatedDesc ?? hit.description}
-                    </p>
-                  )}
-                  {translateBtn}
-                </div>
-              </div>
-
-              {/* Right: interactive panel */}
-              <div style={{
-                width: '420px', flexShrink: 0, overflowY: 'auto', padding: '22px',
-                background: 'rgba(248,250,252,0.8)',
-              }}>
-                {statsSection}
-                {downloadSection}
-                {categoriesSection}
-                {versionsSection}
-              </div>
-            </div>
-          ) : (
-            // ── Single-column normal layout ───────────────────────────────
-            <div style={{ padding: '22px', flex: 1 }}>
-              {statsSection}
-              {gallerySection}
-              {bodySection}
-              {downloadSection}
-              {categoriesSection}
-              {versionsSection}
-            </div>
-          )}
-
-          {footer}
+          {modalHeader}
+          {twoColumnContent}
         </motion.div>
       </motion.div>
     </AnimatePresence>

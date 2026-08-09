@@ -24,6 +24,11 @@ export const LOADER_COLORS: Record<string, string> = {
   geyser:          '#70B2FF',
   geyser_plugin:   '#70B2FF',
   datapack:        '#64748b',
+  liteloader:      '#3B82F6',
+  'java-agent':    '#F59E0B',
+  legacyfabric:    '#C9AE70',
+  ornithe:         '#22C55E',
+  nilloader:       '#64748b',
 };
 
 interface IconProps {
@@ -181,6 +186,63 @@ export function GeyserIcon({ color = 'currentColor', size = 16 }: IconProps) {
   );
 }
 
+export function DatapackIcon({ color = 'currentColor', size = 16 }: IconProps) {
+  return (
+    <svg xmlns="http://www.w3.org/2000/svg" fill={color} viewBox="0 0 20 20" width={size} height={size}>
+      <path fillRule="evenodd" d="M9.504 1.132a1 1 0 0 1 .992 0l1.75 1a1 1 0 1 1-.992 1.736L10 3.152l-1.254.716a1 1 0 1 1-.992-1.736zM5.618 4.504a1 1 0 0 1-.372 1.364L5.016 6l.23.132a1 1 0 1 1-.992 1.736L4 7.723V8a1 1 0 0 1-2 0V6a1 1 0 0 1 .52-.878l1.734-.99a1 1 0 0 1 1.364.372m8.764 0a1 1 0 0 1 1.364-.372l1.733.99A1 1 0 0 1 18 6v2a1 1 0 1 1-2 0v-.277l-.254.145a1 1 0 1 1-.992-1.736l.23-.132-.23-.132a1 1 0 0 1-.372-1.364m-7 4a1 1 0 0 1 1.364-.372L10 8.848l1.254-.716a1 1 0 1 1 .992 1.736L11 10.58V12a1 1 0 1 1-2 0v-1.42l-1.246-.712a1 1 0 0 1-.372-1.364M3 11a1 1 0 0 1 1 1v1.42l1.246.712a1 1 0 1 1-.992 1.736l-1.75-1A1 1 0 0 1 2 14v-2a1 1 0 0 1 1-1m14 0a1 1 0 0 1 1 1v2a1 1 0 0 1-.504.868l-1.75 1a1 1 0 1 1-.992-1.736L16 13.42V12a1 1 0 0 1 1-1m-9.618 5.504a1 1 0 0 1 1.364-.372l.254.145V16a1 1 0 1 1 2 0v.277l.254-.145a1 1 0 1 1 .992 1.736l-1.735.992a1 1 0 0 1-1.022 0l-1.735-.992a1 1 0 0 1-.372-1.364" clipRule="evenodd"/>
+    </svg>
+  );
+}
+
+export function LiteloaderIcon({ color = 'currentColor', size = 16 }: IconProps) {
+  return (
+    <svg xmlns="http://www.w3.org/2000/svg" xmlSpace="preserve" fill="none" fillRule="evenodd" strokeLinecap="round" strokeLinejoin="round" strokeMiterlimit={1.5} clipRule="evenodd" viewBox="0 0 24 24" width={size} height={size}>
+      <path d="M3.924 21.537S7.485 20.426 12 15.172c2.544-2.959 2.311-1.986 4-4.172" stroke={color} strokeWidth="2"/>
+      <path d="M7.778 19s1.208-.48 4.222 0c2.283.364 6.037-4.602 6.825-6.702 1.939-5.165.894-10.431.894-10.431S15.442 6.803 12.864 9c-5.105 4.352-6.509 11-6.509 11" stroke={color} strokeWidth="2"/>
+    </svg>
+  );
+}
+
+export function JavaAgentIcon({ color = 'currentColor', size = 16 }: IconProps) {
+  return (
+    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" width={size} height={size}>
+      <path stroke={color} strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="m18 2 4 4M17 7l3-3M19 9 8.7 19.3c-1 1-2.5 1-3.4 0l-.6-.6c-1-1-1-2.5 0-3.4L15 5M9 11l4 4M5 19l-3 3M14 4l6 6"/>
+    </svg>
+  );
+}
+
+export function LegacyFabricIcon({ color = 'currentColor', size = 16 }: IconProps) {
+  return (
+    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" width={size} height={size}>
+      <g stroke={color} strokeLinecap="round" strokeLinejoin="round" clipPath="url(#lf-clip)">
+        <path strokeWidth="1.994" d="M21.302 9.979 13.88 2.384c-.4-.408-.902-.833-2.246.086-1.726 1.18-.728 1.9-.45 2.203.71.78 7.291 7.716 8.427 9.017.217.242-1.76-1.951-.563-3.442.468-.607 1.56-1.04 2.254-.26.564.632.928 1.56-.295 2.574-2.141 1.769-8.844 7.144-11.012 8.93-1.084.893-2.471.2-3.104-.52-.65-.771-2.653-3-4.448-5.046-.477-.546-.356-1.699.2-2.167 3.034-2.627 7.968-6.399 9.702-7.873"/>
+        <path strokeWidth="2" d="M8 13v4h2"/>
+      </g>
+      <defs>
+        <clipPath id="lf-clip"><path fill="#fff" d="M0 0h24v24H0z"/></clipPath>
+      </defs>
+    </svg>
+  );
+}
+
+export function OrnitheIcon({ color = 'currentColor', size = 16 }: IconProps) {
+  return (
+    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" width={size} height={size}>
+      <path stroke={color} strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M8 7h-.01M20.6 18H12a8 8 0 0 1-8-8V7a4 4 0 0 1 7.28-2.3L22 20"/>
+      <path stroke={color} strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="m4 7-2 .5L4 8M14 18v3M10 17.75V21M17 18a5.999 5.999 0 0 1-3.84-10.61"/>
+    </svg>
+  );
+}
+
+export function NilloaderIcon({ color = 'currentColor', size = 16 }: IconProps) {
+  return (
+    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" width={size} height={size}>
+      <ellipse cx="12" cy="11" stroke={color} strokeWidth="2" rx="5" ry="8"/>
+      <path stroke={color} strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M16.563 2.725 6.756 19.71l5.63 3.251"/>
+    </svg>
+  );
+}
+
 export function GenericLoaderIcon({ color = 'currentColor', size = 16 }: IconProps) {
   return (
     <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width={size} height={size} fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -208,7 +270,14 @@ export function getLoaderIcon(name: string, size = 16): React.ReactNode {
     case 'bungeecord':    return <BungeecordIcon color={color} size={size} />;
     case 'waterfall':     return <WaterfallIcon color={color} size={size} />;
     case 'geyser':
-    case 'geyser_plugin': return <GeyserIcon color={color} size={size} />;
-    default:              return <GenericLoaderIcon color={color} size={size} />;
+    case 'geyser_plugin':  return <GeyserIcon color={color} size={size} />;
+    case 'datapack':       return <DatapackIcon color={color} size={size} />;
+    case 'liteloader':     return <LiteloaderIcon color={color} size={size} />;
+    case 'java-agent':     return <JavaAgentIcon color={color} size={size} />;
+    case 'legacy-fabric':
+    case 'legacyfabric':   return <LegacyFabricIcon color={color} size={size} />;
+    case 'ornithe':        return <OrnitheIcon color={color} size={size} />;
+    case 'nilloader':      return <NilloaderIcon color={color} size={size} />;
+    default:               return <GenericLoaderIcon color={color} size={size} />;
   }
 }

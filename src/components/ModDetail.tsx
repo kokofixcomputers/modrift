@@ -4,6 +4,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import {
   X, Download, Heart, Clock, Package, ExternalLink, ChevronDown,
   CheckCircle, Tag, Calendar, AlertTriangle, Images, Loader2, Globe, Search,
+  Bug, Code2, BookOpen, MessageCircle, Link as LinkIcon,
 } from 'lucide-react';
 import type { SearchHit, Version, Dependency } from '../types/modrinth';
 import { getProjectVersions, formatDownloads, formatDate, numToHex } from '../api/modrinth';
@@ -140,6 +141,7 @@ export function ModDetail({ hit, onClose, contextType, mode = 'modal' }: ModDeta
   const [deps, setDeps]               = useState<DepInfo[]>([]);
   const [lightboxImg, setLightboxImg] = useState<string | null>(null);
   const [galleryMeta, setGalleryMeta] = useState<{ url: string; raw_url: string; title: string | null; description: string | null }[]>([]);
+  const [projectLinks, setProjectLinks] = useState<{ issues: string | null; source: string | null; wiki: string | null; discord: string | null; donations: { id: string; platform: string; url: string }[] } | null>(null);
   const [hoveredScreenshot, setHoveredScreenshot] = useState<number | null>(null);
 
   const { lang, translate, forceTranslate } = useLanguage();
@@ -166,15 +168,20 @@ export function ModDetail({ hit, onClose, contextType, mode = 'modal' }: ModDeta
     setLoading(true);
     setSelectedMcVersion(''); setSelectedLoader('');
     setProjectBody(null); setTranslatedDesc(null); setTranslatedBody(null);
-    setDeps([]); setGalleryMeta([]);
+    setDeps([]); setGalleryMeta([]); setProjectLinks(null);
 
     Promise.all([
       getProjectVersions(hit.slug),
-      modrinthV2.get(`/project/${hit.slug}`).then(r => ({ body: r.data.body as string | null, gallery: (r.data.gallery ?? []) as { url: string; raw_url: string; title: string | null; description: string | null }[] })).catch(() => ({ body: null, gallery: [] })),
-    ]).then(([vers, { body, gallery: gMeta }]) => {
+      modrinthV2.get(`/project/${hit.slug}`).then(r => ({
+        body: r.data.body as string | null,
+        gallery: (r.data.gallery ?? []) as { url: string; raw_url: string; title: string | null; description: string | null }[],
+        links: { issues: r.data.issues_url ?? null, source: r.data.source_url ?? null, wiki: r.data.wiki_url ?? null, discord: r.data.discord_url ?? null, donations: r.data.donation_urls ?? [] },
+      })).catch(() => ({ body: null, gallery: [], links: null })),
+    ]).then(([vers, { body, gallery: gMeta, links }]) => {
       setVersions(vers);
       setProjectBody(body);
       setGalleryMeta(gMeta);
+      setProjectLinks(links);
 
       const seen = new Set<string>();
       const uniqueDeps: Dependency[] = [];
@@ -507,6 +514,53 @@ export function ModDetail({ hit, onClose, contextType, mode = 'modal' }: ModDeta
       <SectionTitle icon={<Package size={12} />}>Dependencies ({deps.length})</SectionTitle>
       <div style={{ display: 'flex', flexDirection: 'column', gap: '5px' }}>
         {deps.map(d => <DepCard key={d.project.id} info={d} />)}
+      </div>
+    </div>
+  ) : null;
+
+  const DONATION_LABELS: Record<string, string> = {
+    'patreon': 'Patreon', 'bmac': 'Buy Me a Coffee', 'github': 'GitHub Sponsors',
+    'opencollective': 'Open Collective', 'ko-fi': 'Ko-fi', 'paypal': 'PayPal',
+  };
+
+  const linkRows: { icon: React.ReactNode; label: string; url: string }[] = [];
+  if (projectLinks) {
+    if (projectLinks.issues)  linkRows.push({ icon: <Bug size={13} />,           label: 'Issue Tracker', url: projectLinks.issues });
+    if (projectLinks.source)  linkRows.push({ icon: <Code2 size={13} />,         label: 'Source Code',   url: projectLinks.source });
+    if (projectLinks.wiki)    linkRows.push({ icon: <BookOpen size={13} />,       label: 'Wiki',          url: projectLinks.wiki });
+    if (projectLinks.discord) linkRows.push({ icon: <MessageCircle size={13} />, label: 'Discord',       url: projectLinks.discord });
+    for (const d of projectLinks.donations) {
+      linkRows.push({ icon: <Heart size={13} />, label: DONATION_LABELS[d.id] ?? d.platform, url: d.url });
+    }
+  }
+
+  const linksSection = linkRows.length > 0 ? (
+    <div style={{
+      background: 'var(--card)', border: '1px solid var(--card-border)',
+      borderRadius: '14px', padding: '14px 16px', marginBottom: '18px',
+    }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '10px' }}>
+        <LinkIcon size={13} color="var(--text-3)" />
+        <span style={{ fontSize: '11px', fontWeight: 700, letterSpacing: '0.07em', textTransform: 'uppercase', color: 'var(--text-3)', fontFamily: 'JetBrains Mono, monospace' }}>Links</span>
+      </div>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
+        {linkRows.map(row => (
+          <a key={row.url} href={row.url} target="_blank" rel="noopener noreferrer"
+            style={{
+              display: 'flex', alignItems: 'center', gap: '9px',
+              padding: '8px 10px', borderRadius: '8px',
+              color: 'var(--text-2)', textDecoration: 'none',
+              fontSize: '13px', fontFamily: 'Instrument Sans, sans-serif',
+              fontWeight: 500, transition: 'all 0.13s',
+            }}
+            onMouseEnter={e => { (e.currentTarget as HTMLElement).style.background = 'var(--card-hover)'; (e.currentTarget as HTMLElement).style.color = 'var(--text)'; }}
+            onMouseLeave={e => { (e.currentTarget as HTMLElement).style.background = 'transparent'; (e.currentTarget as HTMLElement).style.color = 'var(--text-2)'; }}
+          >
+            <span style={{ color: 'var(--text-3)', flexShrink: 0 }}>{row.icon}</span>
+            <span style={{ flex: 1 }}>{row.label}</span>
+            <ExternalLink size={11} color="var(--text-3)" style={{ flexShrink: 0 }} />
+          </a>
+        ))}
       </div>
     </div>
   ) : null;
@@ -924,6 +978,7 @@ export function ModDetail({ hit, onClose, contextType, mode = 'modal' }: ModDeta
       }}>
         {statsSection}
         {downloadSection}
+        {linksSection}
         {dependenciesSection}
         {categoriesSection}
         <a href={`https://modrinth.com/${hit.project_type}/${hit.slug}`} target="_blank" rel="noopener noreferrer"

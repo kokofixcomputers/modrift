@@ -4,6 +4,7 @@ import { marked } from 'marked';
 // Configure marked
 marked.setOptions({ breaks: true, gfm: true });
 
+
 // Basic sanitizer — strip dangerous attributes/tags
 function sanitize(html: string): string {
   return html
@@ -21,8 +22,13 @@ interface MarkdownBodyProps {
 
 export function MarkdownBody({ content, accent = '#1bca8e' }: MarkdownBodyProps) {
   const html = useMemo(() => {
-    const raw = marked.parse(content) as string;
-    return sanitize(raw);
+    // Collapse image/link syntax split across lines (Modrinth descriptions do this)
+    const fixed = content
+      .replace(/!\[([^\]]*)\]\s*\n\s*\(([^)]*)\)/g, '![$1]($2)')
+      .replace(/\[([^\]]*)\]\s*\n\s*\(([^)]*)\)/g, '[$1]($2)');
+    const raw = marked.parse(fixed) as string;
+    const withNewTabs = raw.replace(/<a(\s)/g, '<a target="_blank" rel="noopener noreferrer"$1');
+    return sanitize(withNewTabs);
   }, [content]);
 
   return (

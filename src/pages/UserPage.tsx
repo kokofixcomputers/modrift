@@ -14,6 +14,16 @@ interface UserProject {
   slug: string; title: string; description: string; icon_url: string | null;
   project_type: string; downloads: number; follows: number;
   status: string; date_modified: string; color: number | null;
+  client_side: string; server_side: string;
+}
+
+function getEnvLabel(c: string, s: string): string | null {
+  const hasC = c !== 'unsupported';
+  const hasS = s !== 'unsupported';
+  if (hasC && hasS) return 'Client & Server';
+  if (hasC) return 'Client';
+  if (hasS) return 'Server';
+  return null;
 }
 
 function ProjectCard({ p }: { p: UserProject }) {
@@ -21,6 +31,7 @@ function ProjectCard({ p }: { p: UserProject }) {
   const [err, setErr] = useState(false);
   const archived = p.status === 'archived';
   const accent = p.color ? `#${p.color.toString(16).padStart(6, '0')}` : '#1bca8e';
+  const envLabel = getEnvLabel(p.client_side ?? '', p.server_side ?? '');
 
   return (
     <motion.button
@@ -56,6 +67,11 @@ function ProjectCard({ p }: { p: UserProject }) {
           <span style={{ fontSize: '10px', fontWeight: 600, color: accent, background: `${accent}14`, border: `1px solid ${accent}28`, padding: '1px 7px', borderRadius: '20px', textTransform: 'capitalize', flexShrink: 0 }}>
             {p.project_type}
           </span>
+          {envLabel && (
+            <span style={{ fontSize: '10px', fontWeight: 600, color: 'var(--text-3)', background: 'var(--bg-2)', border: '1px solid var(--card-border)', padding: '1px 7px', borderRadius: '20px', flexShrink: 0, fontFamily: 'JetBrains Mono, monospace' }}>
+              {envLabel}
+            </span>
+          )}
           {archived && (
             <span style={{ fontSize: '10px', fontWeight: 600, color: 'var(--text-3)', background: 'var(--bg-2)', border: '1px solid var(--card-border)', padding: '1px 7px', borderRadius: '20px', flexShrink: 0, fontFamily: 'JetBrains Mono, monospace' }}>
               archived

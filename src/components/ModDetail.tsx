@@ -574,6 +574,56 @@ export function ModDetail({ hit, onClose, contextType, mode = 'modal' }: ModDeta
     </div>
   ) : null;
 
+  const ENV_COLOR: Record<string, string> = {
+    required:    accentHex,
+    optional:    '#f59e0b',
+    unsupported: 'var(--text-3)',
+    unknown:     'var(--text-3)',
+  };
+  const ENV_LABEL: Record<string, string> = {
+    required:    'Required',
+    optional:    'Optional',
+    unsupported: 'Unsupported',
+    unknown:     'Unknown',
+  };
+
+  const environmentSection = (hit.client_side || hit.server_side) ? (
+    <div style={{
+      background: 'var(--card)', border: '1px solid var(--card-border)',
+      borderRadius: '14px', padding: '14px 16px', marginBottom: '18px',
+    }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '12px' }}>
+        <Globe size={13} color="var(--text-3)" />
+        <span style={{ fontSize: '11px', fontWeight: 700, letterSpacing: '0.07em', textTransform: 'uppercase', color: 'var(--text-3)', fontFamily: 'JetBrains Mono, monospace' }}>Environment</span>
+      </div>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+        {([
+          { label: 'Client', value: hit.client_side },
+          { label: 'Server', value: hit.server_side },
+        ] as const).map(({ label, value }) => {
+          if (!value) return null;
+          const color = ENV_COLOR[value] ?? 'var(--text-3)';
+          const unsupported = value === 'unsupported' || value === 'unknown';
+          return (
+            <div key={label} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+              <span style={{ fontSize: '13px', color: 'var(--text-2)', fontFamily: 'Instrument Sans, sans-serif', fontWeight: 500 }}>{label}</span>
+              <span style={{
+                fontSize: '11px', fontWeight: 600, fontFamily: 'JetBrains Mono, monospace',
+                color, background: unsupported ? 'transparent' : `${color}14`,
+                border: `1px solid ${unsupported ? 'var(--card-border)' : color + '30'}`,
+                padding: '2px 9px', borderRadius: '20px',
+                opacity: unsupported ? 0.5 : 1,
+                textTransform: 'capitalize',
+              }}>
+                {ENV_LABEL[value] ?? value}
+              </span>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  ) : null;
+
   const DONATION_LABELS: Record<string, string> = {
     'patreon': 'Patreon', 'bmac': 'Buy Me a Coffee', 'github': 'GitHub Sponsors',
     'opencollective': 'Open Collective', 'ko-fi': 'Ko-fi', 'paypal': 'PayPal',
@@ -1106,6 +1156,7 @@ export function ModDetail({ hit, onClose, contextType, mode = 'modal' }: ModDeta
         background: 'rgba(7,8,13,0.4)',
       }}>
         {statsSection}
+        {environmentSection}
         {downloadSection}
         {linksSection}
         {developersSection}

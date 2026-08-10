@@ -26,6 +26,19 @@ const TYPE_LABEL: Record<string, string> = {
 const MOD_LOADERS = new Set(['fabric','forge','quilt','neoforge','babric','liteloader','rift','modloader','risugami']);
 const PLUGIN_LOADERS = new Set(['paper','spigot','bukkit','folia','purpur','sponge','velocity','waterfall','bungeecord','geyser','geyser_plugin']);
 
+function envLabel(c: string, s: string): string | null {
+  const cOk = c === 'required' || c === 'optional';
+  const sOk = s === 'required' || s === 'optional';
+  if (!cOk && !sOk) return null;
+  if (cOk && !sOk) return c === 'optional' ? 'Client (optional)' : 'Client';
+  if (!cOk && sOk) return s === 'optional' ? 'Server (optional)' : 'Server';
+  // both sides supported
+  if (c === 'required' && s === 'required') return 'Client & Server';
+  if (c === 'required' && s === 'optional') return 'Client + Server';
+  if (c === 'optional' && s === 'required') return 'Server + Client';
+  return 'Client & Server';
+}
+
 export function ModCard({ hit, index }: ModCardProps) {
   const navigate = useNavigate();
   const [imgError, setImgError] = useState(false);
@@ -157,10 +170,16 @@ export function ModCard({ hit, index }: ModCardProps) {
             <Stat icon={<Heart size={11} />} value={formatDownloads(hit.follows)} />
             <Stat icon={<Clock size={11} />} value={formatDate(hit.date_modified)} />
           </div>
-          <div style={{
-            width: '5px', height: '5px', borderRadius: '50%',
-            background: 'var(--accent)', opacity: 0.5,
-          }} />
+          {envLabel(hit.client_side, hit.server_side) && (
+            <span style={{
+              fontSize: '10px', color: 'var(--text-3)',
+              background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.07)',
+              padding: '2px 7px', borderRadius: '20px', fontWeight: 500,
+              fontFamily: 'JetBrains Mono, monospace', flexShrink: 0,
+            }}>
+              {envLabel(hit.client_side, hit.server_side)}
+            </span>
+          )}
         </div>
       </div>
     </motion.div>

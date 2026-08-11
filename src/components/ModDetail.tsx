@@ -8,13 +8,27 @@ import {
   Crown, Users, Building2, Archive,
 } from 'lucide-react';
 import type { SearchHit, Version, Dependency } from '../types/modrinth';
+import type { CFFile } from '../types/curseforge';
 import { getProjectVersions, formatDownloads, formatDate, numToHex } from '../api/modrinth';
+import { cfGetFiles } from '../api/curseforge';
 import { Dropdown } from './Dropdown';
 import { getLoaderIcon } from './LoaderIcons';
 import { MarkdownBody } from './MarkdownBody';
 import { ModrinthInstallButton } from './ModrinthInstallButton';
 import { useLanguage } from '../contexts/LanguageContext';
 import axios from 'axios';
+
+export interface CFDetailData {
+  files: CFFile[];
+  descriptionHtml: string | null;
+  links: { website: string | null; issues: string | null; source: string | null; wiki: string | null };
+  authors: { id: number; name: string; url: string }[];
+  modId: number;
+  slug: string;
+  classId: number;
+  screenshots: { url: string; title: string; description: string }[];
+  cfDeps?: { modId: number; name: string; slug: string; logoUrl: string | null; relationType: number; classId: number }[];
+}
 
 const modrinthV2 = axios.create({
   baseURL: 'https://api.modrinth.com/v2',
@@ -26,6 +40,33 @@ export interface ModDetailProps {
   onClose: () => void;
   contextType?: string;
   mode?: 'modal' | 'page';
+  cfData?: CFDetailData;
+}
+
+const CF_ORANGE = '#f16436';
+const CF_KNOWN_LOADERS = new Set(['fabric', 'forge', 'neoforge', 'quilt', 'liteloader', 'cauldron', 'modloader']);
+
+function cfFileLoaders(file: CFFile): string[] {
+  return file.gameVersions.filter(v => CF_KNOWN_LOADERS.has(v.toLowerCase()));
+}
+function cfFileMcVersions(file: CFFile): string[] {
+  return file.gameVersions.filter(v => /^\d+\.\d+/.test(v));
+}
+function cfReleaseTypeName(rt: 1 | 2 | 3): string {
+  return rt === 1 ? 'release' : rt === 2 ? 'beta' : 'alpha';
+}
+function sanitizeCfHtml(html: string): string {
+  return html
+    .replace(/<script[^>]*>[\s\S]*?<\/script>/gi, '')
+    .replace(/<style[^>]*>[\s\S]*?<\/style>/gi, '')
+    .replace(/\son\w+="[^"]*"/gi, '')
+    .replace(/\son\w+='[^']*'/gi, '');
+}
+function cfModClassPath(classId: number): string {
+  const map: Record<number, string> = {
+    6: 'mc-mods', 4471: 'modpacks', 12: 'texture-packs', 6552: 'shaders', 5: 'bukkit-plugins',
+  };
+  return map[classId] ?? 'mc-mods';
 }
 
 const VERSION_TYPE_COLOR: Record<string, string> = {
@@ -125,6 +166,56 @@ function DepCard({ info }: { info: DepInfo }) {
   );
 }
 
+function CFDepCard({ dep, accentColor }: {
+  dep: { modId: number; name: string; slug: string; logoUrl: string | null; relationType: number; classId: number };
+  accentColor: string;
+}) {
+  const navigate = useNavigate();
+  const [downloading, setDownloading] = useState(false);
+  const [imgErr, setImgErr] = useState(false);
+  const typeColor = dep.relationType === 3 ? 'var(--red)' : 'var(--amber)';
+  const relLabel = dep.relationType === 3 ? 'required' : 'optional';
+
+  const handleDownload = async () => {
+    setDownloading(true);
+    try {
+      const files = await cfGetFiles(String(dep.modId));
+      // Pick best: prefer release (1) over beta (2) over alpha (3), then most recent
+      const sorted = files
+        .filter(f => f.downloadUrl)
+        .sort((a, b) => a.releaseType !== b.releaseType ? a.releaseType - b.releaseType : new Date(b.fileDate).getTime() - new Date(a.fileDate).getTime());
+      const best = sorted[0];
+      if (best?.downloadUrl) {
+        const a = document.createElement('a'); a.href = best.downloadUrl; a.download = best.fileName; a.click();
+      }
+    } finally { setDownloading(false); }
+  };
+
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '10px 12px', background: 'var(--card)', border: '1px solid var(--card-border)', borderRadius: '10px' }}>
+      <div style={{ width: '30px', height: '30px', borderRadius: '8px', flexShrink: 0, overflow: 'hidden', background: 'var(--bg-2)', border: '1px solid var(--card-border)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+        {dep.logoUrl && !imgErr
+          ? <img src={dep.logoUrl} alt={dep.name} onError={() => setImgErr(true)} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+          : <Package size={13} color="var(--text-3)" />}
+      </div>
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <div style={{ fontSize: '13px', fontWeight: 600, color: 'var(--text)', fontFamily: 'Instrument Sans, sans-serif', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{dep.name}</div>
+        <span style={{ fontSize: '10px', fontWeight: 700, letterSpacing: '0.05em', textTransform: 'uppercase', color: typeColor, fontFamily: 'JetBrains Mono, monospace' }}>{relLabel}</span>
+      </div>
+      <div style={{ display: 'flex', gap: '4px', flexShrink: 0 }}>
+        <IconBtn title="View mod" onClick={() => navigate(`/cf/${dep.modId}`)}>
+          <ExternalLink size={12} color="var(--text-3)" />
+        </IconBtn>
+        <IconBtn title="Download latest" onClick={handleDownload} disabled={downloading}>
+          {downloading
+            ? <Loader2 size={12} color="var(--text-3)" style={{ animation: 'spin 0.8s linear infinite' }} />
+            : <Download size={12} color={accentColor} />}
+        </IconBtn>
+      </div>
+    </div>
+  );
+}
+
 function IconBtn({ onClick, disabled, title, children }: {
   onClick: () => void; disabled?: boolean; title?: string; children: React.ReactNode;
 }) {
@@ -179,7 +270,7 @@ function DevProjectCard({ p, onClose }: { p: DevProject; onClose: () => void }) 
   );
 }
 
-export function ModDetail({ hit, onClose, contextType, mode = 'modal' }: ModDetailProps) {
+export function ModDetail({ hit, onClose, contextType, mode = 'modal', cfData }: ModDetailProps) {
   const navigate = useNavigate();
   const [versions, setVersions]       = useState<Version[]>([]);
   const [projectBody, setProjectBody] = useState<string | null>(null);
@@ -210,7 +301,11 @@ export function ModDetail({ hit, onClose, contextType, mode = 'modal' }: ModDeta
   const [teamMembers, setTeamMembers]   = useState<TeamMember[]>([]);
   const [projectOrgId, setProjectOrgId] = useState<string | null>(null);
 
-  const accentHex = numToHex(hit.color) || '#1bca8e';
+  // CF-specific state
+  const [cfDlMcVersion, setCfDlMcVersion] = useState('');
+  const [cfDlLoader, setCfDlLoader]       = useState('');
+
+  const accentHex = cfData ? CF_ORANGE : (numToHex(hit.color) || '#1bca8e');
   const installType = (contextType && contextType !== 'all' && contextType !== 'server')
     ? contextType : hit.project_type;
 
@@ -218,9 +313,20 @@ export function ModDetail({ hit, onClose, contextType, mode = 'modal' }: ModDeta
   useEffect(() => {
     setLoading(true);
     setSelectedMcVersion(''); setSelectedLoader('');
+    setCfDlMcVersion(''); setCfDlLoader('');
     setProjectBody(null); setTranslatedDesc(null); setTranslatedBody(null);
     setDeps([]); setGalleryMeta([]); setProjectLinks(null);
     setTeamMembers([]); setProjectOrgId(null);
+    setActiveTab('about'); setExpandedVersion(null);
+
+    if (cfData) {
+      setGalleryMeta(cfData.screenshots.map(s => ({
+        url: s.url, raw_url: s.url,
+        title: s.title || null, description: s.description || null,
+      })));
+      setLoading(false);
+      return;
+    }
 
     Promise.all([
       getProjectVersions(hit.slug),
@@ -311,6 +417,60 @@ export function ModDetail({ hit, onClose, contextType, mode = 'modal' }: ModDeta
     if (selectedLoader && !availableLoaders.includes(selectedLoader)) setSelectedLoader('');
   }, [availableLoaders, selectedLoader]);
 
+  // CF-specific derived values
+  const allCfDlMcVersions = useMemo(() => {
+    if (!cfData) return [];
+    const seen = new Set<string>();
+    for (const f of cfData.files) for (const v of cfFileMcVersions(f)) seen.add(v);
+    return [...seen].sort((a, b) => b.localeCompare(a, undefined, { numeric: true }));
+  }, [cfData]);
+
+  const allCfDlLoaders = useMemo(() => {
+    if (!cfData) return [];
+    const files = cfDlMcVersion ? cfData.files.filter(f => cfFileMcVersions(f).includes(cfDlMcVersion)) : cfData.files;
+    const seen = new Set<string>();
+    for (const f of files) for (const l of cfFileLoaders(f)) seen.add(l);
+    return [...seen].sort();
+  }, [cfData, cfDlMcVersion]);
+
+  const matchedCFFile = useMemo(() => {
+    if (!cfData || (!cfDlMcVersion && !cfDlLoader)) return null;
+    const priority: Record<number, number> = { 1: 0, 2: 1, 3: 2 };
+    return cfData.files.filter(f => {
+      const mcOk = !cfDlMcVersion || cfFileMcVersions(f).includes(cfDlMcVersion);
+      const loaderOk = !cfDlLoader || cfFileLoaders(f).some(l => l.toLowerCase() === cfDlLoader.toLowerCase());
+      return mcOk && loaderOk;
+    }).sort((a, b) => (priority[a.releaseType] ?? 3) - (priority[b.releaseType] ?? 3))[0] ?? null;
+  }, [cfData, cfDlMcVersion, cfDlLoader]);
+
+  const cfTabAllMcVersions = useMemo(() => {
+    if (!cfData) return [];
+    const seen = new Set<string>();
+    for (const f of cfData.files) for (const v of cfFileMcVersions(f)) seen.add(v);
+    return [...seen].sort((a, b) => b.localeCompare(a, undefined, { numeric: true }));
+  }, [cfData]);
+
+  const cfTabAllLoaders = useMemo(() => {
+    if (!cfData) return [];
+    const files = vTabMc ? cfData.files.filter(f => cfFileMcVersions(f).includes(vTabMc)) : cfData.files;
+    const seen = new Set<string>();
+    for (const f of files) for (const l of cfFileLoaders(f)) seen.add(l);
+    return [...seen].sort();
+  }, [cfData, vTabMc]);
+
+  const cfTabFilteredFiles = useMemo(() => {
+    if (!cfData) return [];
+    const q = vTabSearch.trim().toLowerCase();
+    return cfData.files.filter(f => {
+      const type = cfReleaseTypeName(f.releaseType);
+      const mcOk     = !vTabMc     || cfFileMcVersions(f).includes(vTabMc);
+      const loaderOk = !vTabLoader || cfFileLoaders(f).some(l => l.toLowerCase() === vTabLoader.toLowerCase());
+      const typeOk   = vTabTypes.includes(type);
+      const searchOk = !q || f.fileName.toLowerCase().includes(q) || f.displayName.toLowerCase().includes(q);
+      return mcOk && loaderOk && typeOk && searchOk;
+    });
+  }, [cfData, vTabMc, vTabLoader, vTabTypes, vTabSearch]);
+
   const isRelease = (v: string) => /^\d+(\.\d+)*$/.test(v);
   const filteredMcVersions = showSnapshots ? availableMcVersions : availableMcVersions.filter(isRelease);
   const snapshotCount = availableMcVersions.length - availableMcVersions.filter(isRelease).length;
@@ -354,7 +514,7 @@ export function ModDetail({ hit, onClose, contextType, mode = 'modal' }: ModDeta
     const a = document.createElement('a'); a.href = file.url; a.download = file.filename; a.click();
   };
 
-  const gallery = hit.gallery ?? [];
+  const gallery = cfData ? cfData.screenshots.map(s => s.url) : (hit.gallery ?? []);
 
   // ── JSX sections ──────────────────────────────────────────────────
 
@@ -415,7 +575,13 @@ export function ModDetail({ hit, onClose, contextType, mode = 'modal' }: ModDeta
     </div>
   ) : null;
 
-  const bodySection = (
+  const bodySection = cfData ? (
+    <div style={{ background: 'var(--card)', border: '1px solid var(--card-border)', borderRadius: '12px', padding: '16px', marginBottom: '22px' }}>
+      {cfData.descriptionHtml
+        ? <div className="cf-description" style={{ fontSize: '14px', color: 'var(--text-2)', lineHeight: 1.75 }} dangerouslySetInnerHTML={{ __html: sanitizeCfHtml(cfData.descriptionHtml) }} />
+        : <p style={{ fontSize: '14px', color: 'var(--text-2)', lineHeight: 1.65 }}>{hit.description}</p>}
+    </div>
+  ) : (
     <div style={{
       background: 'var(--card)', border: '1px solid var(--card-border)',
       borderRadius: '12px', padding: '16px', marginBottom: '22px',
@@ -434,7 +600,102 @@ export function ModDetail({ hit, onClose, contextType, mode = 'modal' }: ModDeta
     </div>
   );
 
-  const downloadSection = (
+  const downloadSection = cfData ? (
+    // ── CF download section ──────────────────────────────────────────
+    <div style={{ background: 'var(--card)', border: `1px solid ${CF_ORANGE}28`, borderRadius: '14px', padding: '16px', marginBottom: '18px', boxShadow: `0 4px 24px ${CF_ORANGE}0d` }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '14px' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+          <Download size={13} color={CF_ORANGE} />
+          <span style={{ fontSize: '12px', fontWeight: 700, color: 'var(--text)', fontFamily: 'Instrument Sans, sans-serif' }}>Download</span>
+        </div>
+        <a
+          href={`curseforge://install?addonId=${cfData.modId}&source=cf_website`}
+          style={{
+            display: 'inline-flex', alignItems: 'center', gap: '5px',
+            padding: '5px 11px',
+            background: `linear-gradient(135deg, ${CF_ORANGE}, #e8521a)`,
+            color: 'white', borderRadius: '8px', border: 'none',
+            fontSize: '11px', fontWeight: 700, fontFamily: 'Instrument Sans, sans-serif',
+            boxShadow: `0 2px 10px ${CF_ORANGE}4d`,
+            transition: 'all 0.15s ease', cursor: 'pointer', textDecoration: 'none', flexShrink: 0,
+          }}
+          onMouseEnter={e => { (e.currentTarget as HTMLElement).style.filter = 'brightness(1.1)'; }}
+          onMouseLeave={e => { (e.currentTarget as HTMLElement).style.filter = ''; }}
+          title="Install with CurseForge App"
+        >
+          <img src="/curseforge.png" width="11" height="11" alt="" style={{ display: 'block', filter: 'brightness(0) invert(1)' }} />
+          Install with CurseForge
+        </a>
+      </div>
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', marginBottom: '12px' }}>
+        <div>
+          <p style={label}>MC Version</p>
+          <Dropdown options={allCfDlMcVersions.map(v => ({ value: v, label: v }))}
+            value={cfDlMcVersion} onChange={v => { setCfDlMcVersion(v as string); setCfDlLoader(''); }}
+            placeholder={`${allCfDlMcVersions.length} available`} searchable />
+        </div>
+        <div>
+          <p style={label}>Mod Loader</p>
+          <Dropdown options={allCfDlLoaders.map(l => ({ value: l, label: l, icon: getLoaderIcon(l.toLowerCase(), 14) }))}
+            value={cfDlLoader} onChange={v => setCfDlLoader(v as string)}
+            placeholder={allCfDlLoaders.length > 0 ? `${allCfDlLoaders.length} available` : 'Pick version first'}
+            searchable={false} />
+        </div>
+      </div>
+      <AnimatePresence mode="wait">
+        {(cfDlMcVersion || cfDlLoader) ? (
+          <motion.div key="result" initial={{ opacity: 0, y: -5 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -5 }} transition={{ duration: 0.16 }}>
+            {matchedCFFile ? (() => {
+              const type = cfReleaseTypeName(matchedCFFile.releaseType);
+              const typeColor = VERSION_TYPE_COLOR[type] ?? CF_ORANGE;
+              return (
+                <div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '8px 12px', background: `${typeColor}0d`, border: `1px solid ${typeColor}22`, borderRadius: '9px', marginBottom: '8px' }}>
+                    <div style={{ width: '7px', height: '7px', borderRadius: '50%', flexShrink: 0, background: typeColor }} />
+                    <span style={{ fontSize: '12px', fontWeight: 600, color: 'var(--text)', fontFamily: 'JetBrains Mono, monospace', flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{matchedCFFile.displayName}</span>
+                    <span style={{ fontSize: '10px', color: typeColor, background: `${typeColor}18`, border: `1px solid ${typeColor}30`, padding: '2px 7px', borderRadius: '20px', fontWeight: 700, textTransform: 'capitalize', flexShrink: 0 }}>{type}</span>
+                  </div>
+                  {matchedCFFile.downloadUrl ? (
+                    <button onClick={() => { const a = document.createElement('a'); a.href = matchedCFFile.downloadUrl!; a.download = matchedCFFile.fileName; a.click(); }}
+                      style={{ width: '100%', display: 'flex', alignItems: 'center', gap: '8px', padding: '10px 13px', background: CF_ORANGE, border: 'none', borderRadius: '9px', cursor: 'pointer', transition: 'all 0.14s', textAlign: 'left', boxShadow: `0 4px 14px ${CF_ORANGE}40`, marginBottom: '4px' }}
+                      onMouseEnter={e => { (e.currentTarget as HTMLElement).style.filter = 'brightness(1.1)'; }}
+                      onMouseLeave={e => { (e.currentTarget as HTMLElement).style.filter = ''; }}>
+                      <Download size={12} color="white" />
+                      <span style={{ fontSize: '11px', flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontFamily: 'JetBrains Mono, monospace', color: 'white', fontWeight: 600 }}>{matchedCFFile.fileName}</span>
+                      <span style={{ fontSize: '10px', color: 'rgba(255,255,255,0.75)', flexShrink: 0, fontFamily: 'JetBrains Mono, monospace' }}>{(matchedCFFile.fileLength / 1024 / 1024).toFixed(2)} MB</span>
+                      <CheckCircle size={12} color="white" />
+                    </button>
+                  ) : (
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '11px 13px', background: 'rgba(244,63,94,0.06)', border: '1px solid rgba(244,63,94,0.2)', borderRadius: '9px', fontSize: '12px', color: 'var(--red)', fontFamily: 'Instrument Sans, sans-serif' }}>
+                      <AlertTriangle size={13} /> Distribution disabled by author
+                    </div>
+                  )}
+                </div>
+              );
+            })() : (
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '11px 13px', background: 'rgba(244,63,94,0.06)', border: '1px solid rgba(244,63,94,0.2)', borderRadius: '9px', fontSize: '12px', color: 'var(--red)' }}>
+                <AlertTriangle size={13} />
+                No file matches{cfDlMcVersion ? ` MC ${cfDlMcVersion}` : ''}{cfDlLoader ? ` + ${cfDlLoader}` : ''}.
+              </div>
+            )}
+          </motion.div>
+        ) : (
+          <motion.div key="placeholder" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
+            <div style={{ padding: '10px 12px', background: 'var(--bg-2)', borderRadius: '9px', fontSize: '11px', color: 'var(--text-3)', border: '1px dashed var(--card-border)', textAlign: 'center', fontFamily: 'JetBrains Mono, monospace', marginBottom: '8px' }}>
+              Pick a version and loader to find the right download
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+      <button onClick={() => setActiveTab('versions')}
+        style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '5px', width: '100%', padding: '7px', border: '1px solid var(--card-border)', borderRadius: '8px', background: 'transparent', cursor: 'pointer', fontSize: '11px', color: 'var(--text-3)', fontFamily: 'Instrument Sans, sans-serif', transition: 'all 0.14s', marginTop: '4px' }}
+        onMouseEnter={e => { (e.currentTarget as HTMLElement).style.color = 'var(--text-2)'; (e.currentTarget as HTMLElement).style.borderColor = 'var(--card-border-hover)'; }}
+        onMouseLeave={e => { (e.currentTarget as HTMLElement).style.color = 'var(--text-3)'; (e.currentTarget as HTMLElement).style.borderColor = 'var(--card-border)'; }}>
+        View all {cfData.files.length} files →
+      </button>
+    </div>
+  ) : (
+    // ── Modrinth download section ────────────────────────────────────
     <div style={{
       background: 'var(--card)',
       border: `1px solid ${accentHex}28`,
@@ -565,7 +826,18 @@ export function ModDetail({ hit, onClose, contextType, mode = 'modal' }: ModDeta
     </div>
   );
 
-  const dependenciesSection = deps.length > 0 ? (
+  const cfDeps = cfData?.cfDeps ?? [];
+
+  const dependenciesSection = cfData ? (
+    cfDeps.length > 0 ? (
+      <div style={{ marginBottom: '18px' }}>
+        <SectionTitle icon={<Package size={12} />}>Dependencies ({cfDeps.length})</SectionTitle>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '5px' }}>
+          {cfDeps.map(dep => <CFDepCard key={dep.modId} dep={dep} accentColor={CF_ORANGE} />)}
+        </div>
+      </div>
+    ) : null
+  ) : deps.length > 0 ? (
     <div style={{ marginBottom: '18px' }}>
       <SectionTitle icon={<Package size={12} />}>Dependencies ({deps.length})</SectionTitle>
       <div style={{ display: 'flex', flexDirection: 'column', gap: '5px' }}>
@@ -587,7 +859,7 @@ export function ModDetail({ hit, onClose, contextType, mode = 'modal' }: ModDeta
     unknown:     'Unknown',
   };
 
-  const environmentSection = (hit.client_side || hit.server_side) ? (
+  const environmentSection = !cfData && (hit.client_side || hit.server_side) ? (
     <div style={{
       background: 'var(--card)', border: '1px solid var(--card-border)',
       borderRadius: '14px', padding: '14px 16px', marginBottom: '18px',
@@ -630,7 +902,12 @@ export function ModDetail({ hit, onClose, contextType, mode = 'modal' }: ModDeta
   };
 
   const linkRows: { icon: React.ReactNode; label: string; url: string }[] = [];
-  if (projectLinks) {
+  if (cfData) {
+    if (cfData.links.website) linkRows.push({ icon: <Globe size={13} />,    label: 'Website',       url: cfData.links.website });
+    if (cfData.links.issues)  linkRows.push({ icon: <Bug size={13} />,      label: 'Issue Tracker', url: cfData.links.issues });
+    if (cfData.links.source)  linkRows.push({ icon: <Code2 size={13} />,    label: 'Source Code',   url: cfData.links.source });
+    if (cfData.links.wiki)    linkRows.push({ icon: <BookOpen size={13} />, label: 'Wiki',          url: cfData.links.wiki });
+  } else if (projectLinks) {
     if (projectLinks.issues)  linkRows.push({ icon: <Bug size={13} />,           label: 'Issue Tracker', url: projectLinks.issues });
     if (projectLinks.source)  linkRows.push({ icon: <Code2 size={13} />,         label: 'Source Code',   url: projectLinks.source });
     if (projectLinks.wiki)    linkRows.push({ icon: <BookOpen size={13} />,       label: 'Wiki',          url: projectLinks.wiki });
@@ -679,7 +956,31 @@ export function ModDetail({ hit, onClose, contextType, mode = 'modal' }: ModDeta
     return a.ordering - b.ordering;
   });
 
-  const developersSection = (teamMembers.length > 0 || projectOrgId) ? (
+  const developersSection = cfData ? (
+    cfData.authors.length > 0 ? (
+      <div style={{ background: 'var(--card)', border: '1px solid var(--card-border)', borderRadius: '14px', padding: '14px 16px', marginBottom: '18px' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '10px' }}>
+          <Users size={13} color="var(--text-3)" />
+          <span style={{ fontSize: '11px', fontWeight: 700, letterSpacing: '0.07em', textTransform: 'uppercase', color: 'var(--text-3)', fontFamily: 'JetBrains Mono, monospace' }}>Authors</span>
+        </div>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
+          {cfData.authors.map(a => (
+            <a key={a.id} href={a.url} target="_blank" rel="noopener noreferrer"
+              style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '8px 10px', borderRadius: '8px', color: 'var(--text-2)', textDecoration: 'none', fontSize: '13px', fontFamily: 'Instrument Sans, sans-serif', fontWeight: 500, transition: 'all 0.13s' }}
+              onMouseEnter={e => { (e.currentTarget as HTMLElement).style.background = 'var(--card-hover)'; (e.currentTarget as HTMLElement).style.color = 'var(--text)'; }}
+              onMouseLeave={e => { (e.currentTarget as HTMLElement).style.background = 'transparent'; (e.currentTarget as HTMLElement).style.color = 'var(--text-2)'; }}
+            >
+              <div style={{ width: '28px', height: '28px', borderRadius: '50%', flexShrink: 0, background: `${CF_ORANGE}14`, border: `1px solid ${CF_ORANGE}28`, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '12px', fontWeight: 700, color: CF_ORANGE }}>
+                {a.name[0]?.toUpperCase()}
+              </div>
+              <span style={{ flex: 1 }}>{a.name}</span>
+              <ExternalLink size={11} color="var(--text-3)" style={{ flexShrink: 0 }} />
+            </a>
+          ))}
+        </div>
+      </div>
+    ) : null
+  ) : (teamMembers.length > 0 || projectOrgId) ? (
     <div style={{
       background: 'var(--card)', border: '1px solid var(--card-border)',
       borderRadius: '14px', padding: '14px 16px', marginBottom: '18px',
@@ -761,7 +1062,145 @@ export function ModDetail({ hit, onClose, contextType, mode = 'modal' }: ModDeta
     </div>
   ) : null;
 
-  const versionsTabContent = (
+  const versionsTabContent = cfData ? (
+    // ── CF files tab ─────────────────────────────────────────────────
+    <div>
+      <div style={{ position: 'relative', marginBottom: '12px' }}>
+        <Search size={13} color="var(--text-3)" style={{ position: 'absolute', left: '11px', top: '50%', transform: 'translateY(-50%)', pointerEvents: 'none' }} />
+        <input value={vTabSearch} onChange={e => setVTabSearch(e.target.value)} placeholder="Search files…"
+          style={{ width: '100%', boxSizing: 'border-box', padding: '8px 32px 8px 32px', background: 'var(--card)', border: '1px solid var(--card-border)', borderRadius: '9px', fontSize: '13px', color: 'var(--text)', fontFamily: 'Instrument Sans, sans-serif', outline: 'none', transition: 'border-color 0.15s' }}
+          onFocus={e => { e.currentTarget.style.borderColor = `${CF_ORANGE}60`; }}
+          onBlur={e => { e.currentTarget.style.borderColor = 'var(--card-border)'; }}
+        />
+        {vTabSearch && (
+          <button onClick={() => setVTabSearch('')} style={{ position: 'absolute', right: '9px', top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', cursor: 'pointer', padding: '2px', display: 'flex' }}>
+            <X size={13} color="var(--text-3)" />
+          </button>
+        )}
+      </div>
+      <div style={{ display: 'flex', gap: '8px', marginBottom: '14px', flexWrap: 'wrap', alignItems: 'center' }}>
+        {cfTabAllMcVersions.length > 0 && (
+          <div style={{ flex: '0 0 160px' }}>
+            <p style={label}>MC Version</p>
+            <Dropdown options={cfTabAllMcVersions.map(v => ({ value: v, label: v }))} value={vTabMc} onChange={v => setVTabMc(v as string)} placeholder="All versions" searchable />
+          </div>
+        )}
+        {cfTabAllLoaders.length > 0 && (
+          <div style={{ flex: '0 0 150px' }}>
+            <p style={label}>Loader</p>
+            <Dropdown options={cfTabAllLoaders.map(l => ({ value: l, label: l, icon: getLoaderIcon(l.toLowerCase(), 14) }))} value={vTabLoader} onChange={v => setVTabLoader(v as string)} placeholder="All loaders" searchable={false} />
+          </div>
+        )}
+        <div>
+          <p style={label}>Type</p>
+          <div style={{ display: 'flex', gap: '4px' }}>
+            {(['release', 'beta', 'alpha'] as const).map(type => {
+              const active = vTabTypes.includes(type);
+              return (
+                <button key={type} onClick={() => setVTabTypes(prev => prev.includes(type) ? prev.filter(t => t !== type) : [...prev, type])}
+                  style={{ padding: '5px 10px', borderRadius: '7px', cursor: 'pointer', border: `1px solid ${active ? VERSION_TYPE_COLOR[type] + '60' : 'var(--card-border)'}`, background: active ? VERSION_TYPE_COLOR[type] + '18' : 'var(--card)', color: active ? VERSION_TYPE_COLOR[type] : 'var(--text-3)', fontSize: '11px', fontWeight: 600, transition: 'all 0.14s', textTransform: 'capitalize', fontFamily: 'Instrument Sans, sans-serif' }}>
+                  {type}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+        {(vTabMc || vTabLoader || vTabTypes.length < 3 || vTabSearch) && (
+          <button onClick={() => { setVTabMc(''); setVTabLoader(''); setVTabTypes(['release', 'beta', 'alpha']); setVTabSearch(''); }}
+            style={{ alignSelf: 'flex-end', padding: '5px 10px', background: 'none', border: '1px solid var(--card-border)', borderRadius: '7px', cursor: 'pointer', fontSize: '11px', color: 'var(--text-3)', fontFamily: 'Instrument Sans, sans-serif', transition: 'all 0.14s' }}
+            onMouseEnter={e => { (e.currentTarget as HTMLElement).style.color = 'var(--text-2)'; (e.currentTarget as HTMLElement).style.borderColor = 'var(--card-border-hover)'; }}
+            onMouseLeave={e => { (e.currentTarget as HTMLElement).style.color = 'var(--text-3)'; (e.currentTarget as HTMLElement).style.borderColor = 'var(--card-border)'; }}>
+            Reset
+          </button>
+        )}
+      </div>
+      <div style={{ fontSize: '11px', color: 'var(--text-3)', marginBottom: '12px', fontFamily: 'JetBrains Mono, monospace' }}>
+        {cfTabFilteredFiles.length} file{cfTabFilteredFiles.length !== 1 ? 's' : ''}{cfTabFilteredFiles.length !== cfData.files.length && ` of ${cfData.files.length}`}
+      </div>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+        {cfTabFilteredFiles.map(file => {
+          const type = cfReleaseTypeName(file.releaseType);
+          const color = VERSION_TYPE_COLOR[type] ?? CF_ORANGE;
+          const mcVers = cfFileMcVersions(file);
+          const loaders = cfFileLoaders(file);
+          const expanded = expandedVersion === String(file.id);
+          return (
+            <div key={file.id} style={{ border: '1px solid var(--card-border)', borderRadius: '10px', overflow: 'hidden', background: expanded ? 'var(--card-hover)' : 'var(--card)', transition: 'background 0.14s' }}>
+              <button onClick={() => setExpandedVersion(expanded ? null : String(file.id))}
+                style={{ width: '100%', display: 'flex', alignItems: 'center', gap: '10px', padding: '12px 14px', background: 'transparent', border: 'none', cursor: 'pointer', textAlign: 'left' }}>
+                <div style={{ width: '8px', height: '8px', borderRadius: '50%', flexShrink: 0, background: color, boxShadow: `0 0 0 2px ${color}30` }} />
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
+                    <span style={{ fontSize: '13px', fontWeight: 700, color: 'var(--text)', fontFamily: 'JetBrains Mono, monospace', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '300px' }}>{file.displayName}</span>
+                    <span style={{ fontSize: '10px', fontWeight: 700, textTransform: 'capitalize', color, background: color + '18', border: `1px solid ${color}30`, padding: '1px 7px', borderRadius: '20px', flexShrink: 0 }}>{type}</span>
+                  </div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginTop: '4px', flexWrap: 'wrap' }}>
+                    {loaders.length > 0 && (
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '3px' }}>
+                        {loaders.slice(0, 3).map(l => <span key={l} style={{ display: 'flex' }}>{getLoaderIcon(l.toLowerCase(), 12)}</span>)}
+                        <span style={{ fontSize: '10px', color: 'var(--text-3)', fontFamily: 'JetBrains Mono, monospace' }}>{loaders.join(', ')}</span>
+                      </div>
+                    )}
+                    {loaders.length > 0 && mcVers.length > 0 && <span style={{ fontSize: '10px', color: 'var(--card-border-hover)' }}>·</span>}
+                    {mcVers.length > 0 && (
+                      <span style={{ fontSize: '10px', color: 'var(--text-3)', fontFamily: 'JetBrains Mono, monospace' }}>
+                        {mcVers.length === 1 ? mcVers[0] : `${mcVers[mcVers.length - 1]}–${mcVers[0]}`}
+                      </span>
+                    )}
+                    <span style={{ fontSize: '10px', color: 'var(--card-border-hover)' }}>·</span>
+                    <span style={{ fontSize: '10px', color: 'var(--text-3)', fontFamily: 'JetBrains Mono, monospace' }}>{formatDate(file.fileDate)}</span>
+                  </div>
+                </div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexShrink: 0 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '3px', fontSize: '11px', color: 'var(--text-3)', fontFamily: 'JetBrains Mono, monospace' }}>
+                    <Download size={11} />{formatDownloads(file.downloadCount)}
+                  </div>
+                  <motion.span animate={{ rotate: expanded ? 180 : 0 }} transition={{ duration: 0.18 }} style={{ display: 'flex' }}>
+                    <ChevronDown size={13} color="var(--text-3)" />
+                  </motion.span>
+                </div>
+              </button>
+              <AnimatePresence>
+                {expanded && (
+                  <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }} exit={{ height: 0, opacity: 0 }} transition={{ duration: 0.18 }}
+                    style={{ overflow: 'hidden', borderTop: '1px solid var(--card-border)' }}>
+                    <div style={{ padding: '12px 14px' }}>
+                      {mcVers.length > 1 && (
+                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '3px', marginBottom: '10px' }}>
+                          {mcVers.map(v => <span key={v} style={{ fontSize: '10px', color: 'var(--text-2)', background: 'var(--bg-2)', border: '1px solid var(--card-border)', padding: '2px 7px', borderRadius: '4px', fontFamily: 'JetBrains Mono, monospace' }}>{v}</span>)}
+                        </div>
+                      )}
+                      {file.downloadUrl ? (
+                        <button onClick={() => { const a = document.createElement('a'); a.href = file.downloadUrl!; a.download = file.fileName; a.click(); }}
+                          style={{ width: '100%', display: 'flex', alignItems: 'center', gap: '8px', padding: '10px 13px', background: CF_ORANGE, border: 'none', borderRadius: '9px', cursor: 'pointer', marginBottom: '5px', transition: 'all 0.14s', textAlign: 'left', boxShadow: `0 4px 14px ${CF_ORANGE}40` }}
+                          onMouseEnter={e => { (e.currentTarget as HTMLElement).style.filter = 'brightness(1.1)'; }}
+                          onMouseLeave={e => { (e.currentTarget as HTMLElement).style.filter = ''; }}>
+                          <Download size={12} color="white" />
+                          <span style={{ fontSize: '11px', flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontFamily: 'JetBrains Mono, monospace', color: 'white', fontWeight: 600 }}>{file.fileName}</span>
+                          <span style={{ fontSize: '10px', color: 'rgba(255,255,255,0.75)', flexShrink: 0, fontFamily: 'JetBrains Mono, monospace' }}>{(file.fileLength / 1024 / 1024).toFixed(2)} MB</span>
+                          <CheckCircle size={12} color="white" />
+                        </button>
+                      ) : (
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '11px 13px', background: 'rgba(244,63,94,0.06)', border: '1px solid rgba(244,63,94,0.2)', borderRadius: '9px', fontSize: '12px', color: 'var(--red)' }}>
+                          <AlertTriangle size={13} /> Download not available (distribution disabled by author)
+                        </div>
+                      )}
+                    </div>
+                  </motion.div>
+                )}
+              </AnimatePresence>
+            </div>
+          );
+        })}
+        {cfTabFilteredFiles.length === 0 && (
+          <div style={{ padding: '40px', textAlign: 'center', border: '1px dashed var(--card-border)', borderRadius: '12px', fontSize: '13px', color: 'var(--text-3)', fontFamily: 'Instrument Sans, sans-serif' }}>
+            No files match the current filters.
+          </div>
+        )}
+      </div>
+    </div>
+  ) : (
+    // ── Modrinth versions tab ────────────────────────────────────────
     <div>
       {/* Search */}
       <div style={{ position: 'relative', marginBottom: '12px' }}>
@@ -1082,7 +1521,7 @@ export function ModDetail({ hit, onClose, contextType, mode = 'modal' }: ModDeta
   const tabs: { id: 'about' | 'screenshots' | 'versions'; label: string }[] = [
     { id: 'about',    label: 'About' },
     ...(gallery.length > 0 ? [{ id: 'screenshots' as const, label: `Screenshots (${gallery.length})` }] : []),
-    { id: 'versions', label: `Versions${versions.length ? ` (${versions.length})` : ''}` },
+    { id: 'versions', label: cfData ? `Files (${cfData.files.length})` : `Versions${versions.length ? ` (${versions.length})` : ''}` },
   ];
 
   const tabBar = (
@@ -1100,7 +1539,7 @@ export function ModDetail({ hit, onClose, contextType, mode = 'modal' }: ModDeta
             background: 'none', border: 'none', cursor: 'pointer',
             fontSize: '13px', fontWeight: activeTab === tab.id ? 700 : 500,
             color: activeTab === tab.id ? 'var(--text)' : 'var(--text-3)',
-            borderBottom: `2px solid ${activeTab === tab.id ? 'var(--accent)' : 'transparent'}`,
+            borderBottom: `2px solid ${activeTab === tab.id ? accentHex : 'transparent'}`,
             marginBottom: '-1px', transition: 'all 0.15s',
             fontFamily: 'Instrument Sans, sans-serif',
           }}
@@ -1133,16 +1572,24 @@ export function ModDetail({ hit, onClose, contextType, mode = 'modal' }: ModDeta
               <h3 style={{ fontSize: '11px', fontWeight: 700, color: 'var(--text-3)', letterSpacing: '0.07em', textTransform: 'uppercase', marginBottom: '14px', fontFamily: 'JetBrains Mono, monospace' }}>
                 About
               </h3>
-              {translating && (
-                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '12px', color: 'var(--text-3)', fontSize: '12px' }}>
-                  <Loader2 size={13} color="var(--accent)" style={{ animation: 'spin 0.8s linear infinite' }} /> Translating…
-                </div>
+              {cfData ? (
+                cfData.descriptionHtml
+                  ? <div className="cf-description" style={{ fontSize: '14px', color: 'var(--text-2)', lineHeight: 1.75 }} dangerouslySetInnerHTML={{ __html: sanitizeCfHtml(cfData.descriptionHtml) }} />
+                  : <p style={{ fontSize: '14px', color: 'var(--text-2)', lineHeight: 1.75 }}>{hit.description}</p>
+              ) : (
+                <>
+                  {translating && (
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '12px', color: 'var(--text-3)', fontSize: '12px' }}>
+                      <Loader2 size={13} color="var(--accent)" style={{ animation: 'spin 0.8s linear infinite' }} /> Translating…
+                    </div>
+                  )}
+                  {projectBody || translatedBody
+                    ? <MarkdownBody content={translatedBody ?? projectBody!} accent={accentHex} />
+                    : <p style={{ fontSize: '14px', color: 'var(--text-2)', lineHeight: 1.75 }}>{translatedDesc ?? hit.description}</p>
+                  }
+                  {translateBtn}
+                </>
               )}
-              {projectBody || translatedBody
-                ? <MarkdownBody content={translatedBody ?? projectBody!} accent={accentHex} />
-                : <p style={{ fontSize: '14px', color: 'var(--text-2)', lineHeight: 1.75 }}>{translatedDesc ?? hit.description}</p>
-              }
-              {translateBtn}
             </div>
           ) : activeTab === 'screenshots' ? screenshotsTabContent
           : versionsTabContent}
@@ -1162,13 +1609,24 @@ export function ModDetail({ hit, onClose, contextType, mode = 'modal' }: ModDeta
         {developersSection}
         {dependenciesSection}
         {categoriesSection}
-        <a href={`https://modrinth.com/${hit.project_type}/${hit.slug}`} target="_blank" rel="noopener noreferrer"
-          style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px', padding: '10px', borderRadius: '10px', border: '1px solid var(--card-border)', fontSize: '12px', fontWeight: 500, color: 'var(--text-3)', textDecoration: 'none', transition: 'all 0.14s', marginTop: '8px' }}
-          onMouseEnter={e => { (e.currentTarget as HTMLElement).style.color = 'var(--text-2)'; (e.currentTarget as HTMLElement).style.borderColor = 'var(--card-border-hover)'; }}
-          onMouseLeave={e => { (e.currentTarget as HTMLElement).style.color = 'var(--text-3)'; (e.currentTarget as HTMLElement).style.borderColor = 'var(--card-border)'; }}
-        >
-          <ExternalLink size={12} /> View on Modrinth
-        </a>
+        {cfData ? (
+          <a href={`https://www.curseforge.com/minecraft/${cfModClassPath(cfData.classId)}/${cfData.slug}`} target="_blank" rel="noopener noreferrer"
+            style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px', padding: '10px', borderRadius: '10px', border: '1px solid var(--card-border)', fontSize: '12px', fontWeight: 500, color: 'var(--text-3)', textDecoration: 'none', transition: 'all 0.14s', marginTop: '8px', fontFamily: 'Instrument Sans, sans-serif' }}
+            onMouseEnter={e => { (e.currentTarget as HTMLElement).style.color = 'var(--text-2)'; (e.currentTarget as HTMLElement).style.borderColor = 'var(--card-border-hover)'; }}
+            onMouseLeave={e => { (e.currentTarget as HTMLElement).style.color = 'var(--text-3)'; (e.currentTarget as HTMLElement).style.borderColor = 'var(--card-border)'; }}
+          >
+            <img src="/curseforge.png" width="12" height="12" alt="" style={{ display: 'block', flexShrink: 0, opacity: 0.65 }} />
+            View on CurseForge
+          </a>
+        ) : (
+          <a href={`https://modrinth.com/${hit.project_type}/${hit.slug}`} target="_blank" rel="noopener noreferrer"
+            style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px', padding: '10px', borderRadius: '10px', border: '1px solid var(--card-border)', fontSize: '12px', fontWeight: 500, color: 'var(--text-3)', textDecoration: 'none', transition: 'all 0.14s', marginTop: '8px' }}
+            onMouseEnter={e => { (e.currentTarget as HTMLElement).style.color = 'var(--text-2)'; (e.currentTarget as HTMLElement).style.borderColor = 'var(--card-border-hover)'; }}
+            onMouseLeave={e => { (e.currentTarget as HTMLElement).style.color = 'var(--text-3)'; (e.currentTarget as HTMLElement).style.borderColor = 'var(--card-border)'; }}
+          >
+            <ExternalLink size={12} /> View on Modrinth
+          </a>
+        )}
       </div>
     </div>
   );
@@ -1201,6 +1659,7 @@ export function ModDetail({ hit, onClose, contextType, mode = 'modal' }: ModDeta
               </h1>
               {hit.author && <p style={{ fontSize: '12px', color: 'var(--text-3)' }}>by {hit.author}</p>}
             </div>
+            {cfData && <img src="/curseforge.png" width="20" height="20" alt="CurseForge" style={{ opacity: 0.55, flexShrink: 0 }} />}
           </div>
         </div>
         <div style={{ maxWidth: '1440px', margin: '0 auto', flex: 1, display: 'flex', flexDirection: 'column' }}>
@@ -1234,6 +1693,7 @@ export function ModDetail({ hit, onClose, contextType, mode = 'modal' }: ModDeta
         <h2 style={{ fontFamily: 'Instrument Sans, sans-serif', fontSize: '16px', fontWeight: 700, color: 'var(--text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{hit.title}</h2>
         <p style={{ fontSize: '11px', color: 'var(--text-3)' }}>by {hit.author}</p>
       </div>
+      {cfData && <img src="/curseforge.png" width="16" height="16" alt="CurseForge" style={{ opacity: 0.55, flexShrink: 0, marginRight: '4px' }} />}
       <button
         onClick={onClose}
         style={{

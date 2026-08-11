@@ -9,6 +9,8 @@ import { Sidebar } from '../components/Sidebar';
 import { ModCard } from '../components/ModCard';
 import { ServersView } from '../components/ServersView';
 import { searchProjects, getCategories, getGameVersions, getLoaders } from '../api/modrinth';
+import { cfSearch } from '../api/curseforge';
+import { usePlatform } from '../contexts/PlatformContext';
 import type { SearchHit, SearchFilters } from '../types/modrinth';
 
 function useDebounce<T>(value: T, delay: number): T {
@@ -38,7 +40,10 @@ const PLUGIN_ONLY = new Set([
 ]);
 const LIMIT = 20;
 
+const CF_LOADERS = ['fabric', 'forge', 'neoforge', 'quilt', 'liteloader'];
+
 export default function BrowsePage() {
+  const { platform } = usePlatform();
   const [searchParams, setSearchParams] = useSearchParams();
 
   // Derive filter state from URL
@@ -100,12 +105,14 @@ export default function BrowsePage() {
     }).catch(console.error);
   }, []);
 
-  const loaderOptions = allLoaders.filter(l => {
-    const name = l.name.toLowerCase();
-    if (projectType === 'plugin') return PLUGIN_ONLY.has(name);
-    if (projectType === 'datapack') return l.types.includes('datapack');
-    return l.types.includes('mod') && !PLUGIN_ONLY.has(name);
-  }).map(l => l.name);
+  const loaderOptions = platform === 'curseforge'
+    ? CF_LOADERS
+    : allLoaders.filter(l => {
+        const name = l.name.toLowerCase();
+        if (projectType === 'plugin') return PLUGIN_ONLY.has(name);
+        if (projectType === 'datapack') return l.types.includes('datapack');
+        return l.types.includes('mod') && !PLUGIN_ONLY.has(name);
+      }).map(l => l.name);
 
   // Search
   useEffect(() => {
@@ -113,12 +120,15 @@ export default function BrowsePage() {
     setLoading(true);
     setError(null);
     const f = { ...filters, query: debouncedQ };
-    searchProjects(f)
+    const searchFn = platform === 'curseforge'
+      ? cfSearch({ query: debouncedQ, projectType, sortBy, versions, loaders, limit: LIMIT, offset })
+      : searchProjects(f);
+    searchFn
       .then(d => { setResults(d.hits); setTotalHits(d.total_hits); })
       .catch(err => { setError(err?.message ?? 'Failed to fetch results'); setResults([]); })
       .finally(() => setLoading(false));
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [debouncedQ, projectType, sortBy, loaders.join(','), versions.join(','), categories.join(','), offset]);
+  }, [platform, debouncedQ, projectType, sortBy, loaders.join(','), versions.join(','), categories.join(','), offset]);
 
   const totalPages  = Math.ceil(totalHits / LIMIT);
   const currentPage = page;
@@ -132,7 +142,7 @@ export default function BrowsePage() {
 
   return (
     <div style={{ flex: 1 }}>
-      {showHero && <Hero />}
+      {showHero && <Hero platform={platform} />}
 
       <main style={{
         maxWidth: '1440px', margin: '0 auto',
@@ -143,7 +153,7 @@ export default function BrowsePage() {
           <Sidebar
             filters={filters}
             onFiltersChange={updateFilters}
-            categories={tagCategories}
+            categories={platform === 'curseforge' ? [] : tagCategories}
             gameVersions={gameVersions}
             loaders={loaderOptions}
             totalResults={totalHits}
@@ -239,12 +249,18 @@ export default function BrowsePage() {
   );
 }
 
-function Hero() {
+function Hero({ platform }: { platform: string }) {
+  const isCF = platform === 'curseforge';
+  const accent = isCF ? '#f16436' : '#1bca8e';
+  const accentDim = isCF ? 'rgba(241,100,54,0.12)' : 'var(--accent-dim)';
+  const accentBorder = isCF ? 'rgba(241,100,54,0.3)' : 'var(--accent-border)';
+
   return (
     <motion.div
+      key={platform}
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
-      transition={{ duration: 0.5 }}
+      transition={{ duration: 0.4 }}
       style={{
         borderBottom: '1px solid rgba(255,255,255,0.05)',
         padding: '52px 24px 48px',
@@ -257,15 +273,18 @@ function Hero() {
           animate={{ scale: 1, opacity: 1 }}
           transition={{ delay: 0.1, duration: 0.4 }}
           style={{
-            display: 'inline-flex', alignItems: 'center', gap: '6px',
+            display: 'inline-flex', alignItems: 'center', gap: '7px',
             padding: '4px 12px', borderRadius: '20px',
-            background: 'var(--accent-dim)', border: '1px solid var(--accent-border)',
+            background: accentDim, border: `1px solid ${accentBorder}`,
             marginBottom: '20px',
           }}
         >
-          <span style={{ width: '6px', height: '6px', borderRadius: '50%', background: 'var(--accent)', display: 'block' }} />
-          <span style={{ fontSize: '11px', fontWeight: 600, color: 'var(--accent)', letterSpacing: '0.05em', fontFamily: 'JetBrains Mono, monospace' }}>
-            BETTER MODRINTH
+          {isCF
+            ? <img src="/curseforge.png" width="13" height="13" alt="" style={{ display: 'block' }} />
+            : <span style={{ width: '6px', height: '6px', borderRadius: '50%', background: accent, display: 'block' }} />
+          }
+          <span style={{ fontSize: '11px', fontWeight: 600, color: accent, letterSpacing: '0.05em', fontFamily: 'JetBrains Mono, monospace' }}>
+            {isCF ? 'CURSEFORGE' : 'BETTER MODRINTH'}
           </span>
         </motion.div>
 
@@ -283,7 +302,9 @@ function Hero() {
           Browse Minecraft content
           <br />
           <span style={{
-            background: 'linear-gradient(135deg, #1bca8e 20%, #60a5fa 100%)',
+            background: isCF
+              ? 'linear-gradient(135deg, #f16436 20%, #f59e0b 100%)'
+              : 'linear-gradient(135deg, #1bca8e 20%, #60a5fa 100%)',
             WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', backgroundClip: 'text',
           }}>
             without the noise.
@@ -291,12 +312,14 @@ function Hero() {
         </motion.h1>
 
         <motion.p
-          initial={{ y: 10, opacity: 0 }}
+          initial={{ y: 0, opacity: 0 }}
           animate={{ y: 0, opacity: 1 }}
           transition={{ delay: 0.2, duration: 0.4 }}
           style={{ fontSize: '15px', color: 'var(--text-2)', lineHeight: 1.65 }}
         >
-          A focused frontend for Modrinth. Fast search, clean layout, one-click installs.
+          {isCF
+            ? 'CurseForge mods via a clean, fast interface. No ads, no clutter.'
+            : 'A focused frontend for Modrinth. Fast search, clean layout, one-click installs.'}
         </motion.p>
       </div>
     </motion.div>

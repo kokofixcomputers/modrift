@@ -3,6 +3,7 @@ import { Link, useLocation, useNavigate, useSearchParams } from 'react-router-do
 import { motion, AnimatePresence } from 'framer-motion';
 import { Search, X, ChevronDown, Check, ArrowLeft, Layers } from 'lucide-react';
 import { useLanguage, LANGUAGES, FLAG_SVGS, type Lang } from '../contexts/LanguageContext';
+import { usePlatform } from '../contexts/PlatformContext';
 
 function LangSelector() {
   const { lang, setLang } = useLanguage();
@@ -106,6 +107,78 @@ function LangSelector() {
           </motion.div>
         )}
       </AnimatePresence>
+    </div>
+  );
+}
+
+function PlatformToggle() {
+  const { platform, setPlatform } = usePlatform();
+  const navigate = useNavigate();
+  const location = useLocation();
+
+  const isOnDetailPage = location.pathname.startsWith('/mod/') || location.pathname.startsWith('/cf/') || location.pathname.startsWith('/user/') || location.pathname.startsWith('/org/');
+
+  const handleSwitch = (p: 'modrinth' | 'curseforge') => {
+    setPlatform(p);
+    if (isOnDetailPage) navigate('/');
+  };
+
+  const MR_COLOR = '#1bca8e';
+  const CF_COLOR = '#f16436';
+
+  return (
+    <div style={{
+      display: 'flex', alignItems: 'center',
+      background: 'var(--card)', border: '1px solid var(--card-border)',
+      borderRadius: '9px', padding: '3px', gap: '2px',
+    }}>
+      {/* Modrinth */}
+      <button
+        onClick={() => handleSwitch('modrinth')}
+        title="Modrinth"
+        style={{
+          display: 'flex', alignItems: 'center', gap: '5px',
+          padding: '4px 9px', borderRadius: '6px', border: 'none',
+          background: platform === 'modrinth' ? `${MR_COLOR}18` : 'transparent',
+          cursor: platform === 'modrinth' ? 'default' : 'pointer',
+          transition: 'all 0.15s',
+          outline: platform === 'modrinth' ? `1px solid ${MR_COLOR}35` : 'none',
+        }}
+      >
+        <img src="/modrinth.ico" width="14" height="14" alt="Modrinth" style={{ display: 'block', flexShrink: 0 }} />
+        <span style={{
+          fontSize: '11px', fontWeight: 600,
+          color: platform === 'modrinth' ? MR_COLOR : 'var(--text-3)',
+          fontFamily: 'Instrument Sans, sans-serif',
+          transition: 'color 0.15s',
+        }}>
+          Modrinth
+        </span>
+      </button>
+
+      {/* CurseForge */}
+      <button
+        onClick={() => handleSwitch('curseforge')}
+        title="CurseForge"
+        style={{
+          display: 'flex', alignItems: 'center', gap: '5px',
+          padding: '4px 9px', borderRadius: '6px', border: 'none',
+          background: platform === 'curseforge' ? `${CF_COLOR}18` : 'transparent',
+          cursor: platform === 'curseforge' ? 'default' : 'pointer',
+          transition: 'all 0.15s',
+          outline: platform === 'curseforge' ? `1px solid ${CF_COLOR}35` : 'none',
+        }}
+      >
+        <img src="/curseforge.png" width="14" height="14" alt="CurseForge" style={{ display: 'block', flexShrink: 0 }} />
+        <span style={{
+          fontSize: '11px', fontWeight: 600,
+          color: platform === 'curseforge' ? CF_COLOR : 'var(--text-3)',
+          fontFamily: 'Instrument Sans, sans-serif',
+          transition: 'color 0.15s',
+        }}>
+          CurseForge
+        </span>
+      </button>
     </div>
   );
 }
@@ -263,32 +336,7 @@ export function Header() {
         {/* Right */}
         <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: '8px' }}>
           <LangSelector />
-          <a
-            href="https://modrinth.com"
-            target="_blank"
-            rel="noopener noreferrer"
-            style={{
-              display: 'flex', alignItems: 'center', gap: '5px',
-              padding: '6px 12px', borderRadius: '8px',
-              border: '1px solid var(--card-border)',
-              fontSize: '12px', fontWeight: 500, color: 'var(--text-2)',
-              textDecoration: 'none', transition: 'all 0.15s',
-              background: 'var(--card)',
-            }}
-            onMouseEnter={e => {
-              (e.currentTarget as HTMLElement).style.background = 'var(--card-hover)';
-              (e.currentTarget as HTMLElement).style.color = 'var(--text)';
-              (e.currentTarget as HTMLElement).style.borderColor = 'var(--card-border-hover)';
-            }}
-            onMouseLeave={e => {
-              (e.currentTarget as HTMLElement).style.background = 'var(--card)';
-              (e.currentTarget as HTMLElement).style.color = 'var(--text-2)';
-              (e.currentTarget as HTMLElement).style.borderColor = 'var(--card-border)';
-            }}
-          >
-            <img src="modrinth.ico" width="14" height="14" alt="" style={{ display: 'block', flexShrink: 0 }} />
-            Modrinth
-          </a>
+          <PlatformToggle />
         </div>
       </div>
     </motion.header>

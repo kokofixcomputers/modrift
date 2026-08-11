@@ -5,6 +5,7 @@ import { useNavigate } from 'react-router-dom';
 import type { SearchHit } from '../types/modrinth';
 import { formatDownloads, formatDate, numToHex } from '../api/modrinth';
 import { getLoaderIcon, LOADER_COLORS } from './LoaderIcons';
+import { usePlatform } from '../contexts/PlatformContext';
 
 interface ModCardProps {
   hit: SearchHit;
@@ -41,8 +42,9 @@ function envLabel(c: string, s: string): string | null {
 
 export function ModCard({ hit, index }: ModCardProps) {
   const navigate = useNavigate();
+  const { platform } = usePlatform();
   const [imgError, setImgError] = useState(false);
-  const accentHex = numToHex(hit.color) || 'var(--accent)';
+  const accentHex = numToHex(hit.color) || (platform === 'curseforge' ? '#f16436' : 'var(--accent)');
 
   const loaders = [...new Set(hit.categories?.filter(c =>
     hit.project_type === 'plugin' ? PLUGIN_LOADERS.has(c) : MOD_LOADERS.has(c)
@@ -53,7 +55,7 @@ export function ModCard({ hit, index }: ModCardProps) {
       initial={{ opacity: 0, y: 12 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.3, delay: index * 0.035, ease: [0.4, 0, 0.2, 1] }}
-      onClick={() => navigate(`/mod/${hit.slug}`)}
+      onClick={() => navigate(platform === 'curseforge' ? `/cf/${hit.project_id}` : `/mod/${hit.slug}`)}
       className="glass-card"
       style={{
         cursor: 'pointer',

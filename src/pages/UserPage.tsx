@@ -193,7 +193,7 @@ export default function UserPage() {
           onMouseEnter={e => { (e.currentTarget as HTMLElement).style.color = 'var(--text)'; (e.currentTarget as HTMLElement).style.borderColor = 'var(--card-border-hover)'; }}
           onMouseLeave={e => { (e.currentTarget as HTMLElement).style.color = 'var(--text-3)'; (e.currentTarget as HTMLElement).style.borderColor = 'var(--card-border)'; }}
         >
-          <img src="/modrinth.ico" width="13" height="13" alt="" style={{ display: 'block' }} />
+          <img src="modrinth.ico" width="13" height="13" alt="" style={{ display: 'block' }} />
           Modrinth
         </a>
       </div>

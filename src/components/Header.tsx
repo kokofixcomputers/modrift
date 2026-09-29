@@ -145,7 +145,7 @@ function PlatformToggle() {
           outline: platform === 'modrinth' ? `1px solid ${MR_COLOR}35` : 'none',
         }}
       >
-        <img src="/modrinth.ico" width="14" height="14" alt="Modrinth" style={{ display: 'block', flexShrink: 0 }} />
+        <img src="modrinth.ico" width="14" height="14" alt="Modrinth" style={{ display: 'block', flexShrink: 0 }} />
         <span style={{
           fontSize: '11px', fontWeight: 600,
           color: platform === 'modrinth' ? MR_COLOR : 'var(--text-3)',
@@ -169,7 +169,7 @@ function PlatformToggle() {
           outline: platform === 'curseforge' ? `1px solid ${CF_COLOR}35` : 'none',
         }}
       >
-        <img src="/curseforge.png" width="14" height="14" alt="CurseForge" style={{ display: 'block', flexShrink: 0 }} />
+        <img src="curseforge.png" width="14" height="14" alt="CurseForge" style={{ display: 'block', flexShrink: 0 }} />
         <span style={{
           fontSize: '11px', fontWeight: 600,
           color: platform === 'curseforge' ? CF_COLOR : 'var(--text-3)',

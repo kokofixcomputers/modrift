@@ -878,7 +878,7 @@ export function ModDetail({ hit, onClose, contextType, mode = 'modal', cfData }:
           onMouseLeave={e => { (e.currentTarget as HTMLElement).style.filter = ''; }}
           title="Install with CurseForge App"
         >
-          <img src="/curseforge.png" width="11" height="11" alt="" style={{ display: 'block', filter: 'brightness(0) invert(1)' }} />
+          <img src="curseforge.png" width="11" height="11" alt="" style={{ display: 'block', filter: 'brightness(0) invert(1)' }} />
           Install with CurseForge
         </a>
       </div>

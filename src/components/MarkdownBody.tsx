@@ -1,15 +1,19 @@
 import { useMemo } from 'react';
 import { marked } from 'marked';
+import { parseYouTubeParts, YouTubeEmbed } from './YouTubeEmbed';
 
 // Configure marked
 marked.setOptions({ breaks: true, gfm: true });
 
 
-// Basic sanitizer — strip dangerous attributes/tags
+// Sanitizer — strips dangerous tags/attrs but leaves YouTube iframes for YouTubeEmbed
 function sanitize(html: string): string {
   return html
     .replace(/<script[\s\S]*?<\/script>/gi, '')
-    .replace(/<iframe[\s\S]*?>/gi, '')
+    // Strip non-YouTube iframes; YouTube ones are already extracted by parseYouTubeParts
+    .replace(/<iframe(?![^>]*src=["']https?:\/\/(?:www\.)?(?:youtube(?:-nocookie)?\.com)\/)[^>]*(?:>\s*<\/iframe>|\/?>)/gi, '')
+    // Strip any remaining bare iframe tags (the YT ones were already pulled out)
+    .replace(/<iframe[^>]*(?:>\s*<\/iframe>|\/?>)/gi, '')
     .replace(/on\w+="[^"]*"/gi, '')
     .replace(/on\w+='[^']*'/gi, '')
     .replace(/javascript:/gi, '');
@@ -21,19 +25,19 @@ interface MarkdownBodyProps {
 }
 
 export function MarkdownBody({ content, accent = '#1bca8e' }: MarkdownBodyProps) {
-  const html = useMemo(() => {
-    // Collapse image/link syntax split across lines (Modrinth descriptions do this)
+  const parts = useMemo(() => {
     const fixed = content
       .replace(/!\[([^\]]*)\]\s*\n\s*\(([^)]*)\)/g, '![$1]($2)')
       .replace(/\[([^\]]*)\]\s*\n\s*\(([^)]*)\)/g, '[$1]($2)');
     const raw = marked.parse(fixed) as string;
     const withNewTabs = raw.replace(/<a(\s)/g, '<a target="_blank" rel="noopener noreferrer"$1');
-    return sanitize(withNewTabs);
+    // Extract YouTube iframes BEFORE sanitizing so they aren't stripped
+    return parseYouTubeParts(withNewTabs).map(p =>
+      p.type === 'html' ? { ...p, content: sanitize(p.content) } : p
+    );
   }, [content]);
 
-  return (
-    <>
-      <style>{`
+  const styles = `
         .md-body { font-family: 'DM Sans', sans-serif; font-size: 14px; line-height: 1.75; color: var(--text-secondary); word-break: break-word; }
         .md-body h1, .md-body h2, .md-body h3, .md-body h4 {
           font-family: 'Syne', sans-serif; font-weight: 700; color: var(--text-primary);
@@ -72,11 +76,16 @@ export function MarkdownBody({ content, accent = '#1bca8e' }: MarkdownBodyProps)
         .md-body hr { border: none; border-top: 1px solid var(--border); margin: 1.2em 0; }
         .md-body strong { font-weight: 600; color: var(--text-primary); }
         .md-body em { font-style: italic; }
-      `}</style>
-      <div
-        className="md-body"
-        dangerouslySetInnerHTML={{ __html: html }}
-      />
+      `;
+
+  return (
+    <>
+      <style>{styles}</style>
+      {parts.map((part, i) =>
+        part.type === 'youtube'
+          ? <YouTubeEmbed key={i} videoId={part.videoId} />
+          : <div key={i} className="md-body" dangerouslySetInnerHTML={{ __html: part.content }} />
+      )}
     </>
   );
 }

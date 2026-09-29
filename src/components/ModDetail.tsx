@@ -5,8 +5,10 @@ import {
   X, Download, Heart, Clock, Package, ExternalLink, ChevronDown,
   CheckCircle, Tag, Calendar, AlertTriangle, Images, Loader2, Globe, Search,
   Bug, Code2, BookOpen, MessageCircle, Link as LinkIcon,
-  Crown, Users, Building2, Archive,
+  Crown, Users, Building2, Archive, GitCompare, Plus, Minus, RefreshCw,
+  CreditCard, Radio, Bot, Monitor,
 } from 'lucide-react';
+import { unzip } from 'fflate';
 import type { SearchHit, Version, Dependency } from '../types/modrinth';
 import type { CFFile } from '../types/curseforge';
 import { getProjectVersions, formatDownloads, formatDate, numToHex } from '../api/modrinth';
@@ -15,6 +17,7 @@ import { Dropdown } from './Dropdown';
 import { getLoaderIcon } from './LoaderIcons';
 import { MarkdownBody } from './MarkdownBody';
 import { ModrinthInstallButton } from './ModrinthInstallButton';
+import { parseYouTubeParts, YouTubeEmbed } from './YouTubeEmbed';
 import { useLanguage } from '../contexts/LanguageContext';
 import axios from 'axios';
 
@@ -60,7 +63,10 @@ function sanitizeCfHtml(html: string): string {
     .replace(/<script[^>]*>[\s\S]*?<\/script>/gi, '')
     .replace(/<style[^>]*>[\s\S]*?<\/style>/gi, '')
     .replace(/\son\w+="[^"]*"/gi, '')
-    .replace(/\son\w+='[^']*'/gi, '');
+    .replace(/\son\w+='[^']*'/gi, '')
+    // Strip non-YouTube iframes; YouTube ones are rendered as YouTubeEmbed
+    .replace(/<iframe(?![^>]*src=["']https?:\/\/(?:www\.)?(?:youtube(?:-nocookie)?\.com)\/)[^>]*(?:>\s*<\/iframe>|\/?>)/gi, '')
+    .replace(/<iframe[^>]*(?:>\s*<\/iframe>|\/?>)/gi, '');
 }
 function cfModClassPath(classId: number): string {
   const map: Record<number, string> = {
@@ -68,6 +74,48 @@ function cfModClassPath(classId: number): string {
   };
   return map[classId] ?? 'mc-mods';
 }
+
+// ── Disclosure types ─────────────────────────────────────────────────────────
+type Disclosure =
+  | { type: 'paid_features'; features: string[]; updated_at: string }
+  | { type: 'telemetry'; consent: string; data_collected: string[]; updated_at: string }
+  | { type: 'ai_content'; note: string | null; uses: string[]; updated_at: string }
+  | { type: 'system_interactions'; note: string | null; interactions: string[]; updated_at: string };
+// ─────────────────────────────────────────────────────────────────────────────
+
+// ── Modpack compare helpers ───────────────────────────────────────────────────
+const MODRINTH_CDN_RE = /\/data\/([A-Za-z0-9]+)\/versions\/([A-Za-z0-9]+)\//;
+
+interface MrpackEntry { projectId: string; versionId: string; }
+interface CmpMod { projectId: string; name: string; iconUrl: string | null; versionId: string; }
+interface CompareResult {
+  added: CmpMod[];
+  removed: CmpMod[];
+  updated: (CmpMod & { fromVersion: string; toVersion: string })[];
+}
+
+async function parseMrpackEntries(url: string): Promise<MrpackEntry[]> {
+  const resp = await fetch(url);
+  const buf = new Uint8Array(await resp.arrayBuffer());
+  return new Promise((resolve, reject) => {
+    unzip(buf, (err, files) => {
+      if (err) { reject(err); return; }
+      const bytes = files['modrinth.index.json'];
+      if (!bytes) { resolve([]); return; }
+      const index = JSON.parse(new TextDecoder().decode(bytes)) as { files: { path: string; downloads: string[] }[] };
+      const entries: MrpackEntry[] = [];
+      for (const f of index.files) {
+        if (!f.path.startsWith('mods/')) continue;
+        for (const dl of f.downloads) {
+          const m = dl.match(MODRINTH_CDN_RE);
+          if (m) { entries.push({ projectId: m[1], versionId: m[2] }); break; }
+        }
+      }
+      resolve(entries);
+    });
+  });
+}
+// ─────────────────────────────────────────────────────────────────────────────
 
 const VERSION_TYPE_COLOR: Record<string, string> = {
   release: '#1bca8e',
@@ -270,6 +318,100 @@ function DevProjectCard({ p, onClose }: { p: DevProject; onClose: () => void }) 
   );
 }
 
+function CmpSection({ title, icon, accent, count, children }: { title: string; icon: React.ReactNode; accent: string; count: number; children: React.ReactNode }) {
+  return (
+    <div style={{ marginBottom: '20px' }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '10px' }}>
+        {icon}
+        <span style={{ fontSize: '12px', fontWeight: 700, color: accent, fontFamily: 'Instrument Sans, sans-serif', textTransform: 'uppercase', letterSpacing: '0.06em' }}>{title}</span>
+        <span style={{ fontSize: '11px', fontWeight: 600, padding: '1px 7px', borderRadius: '20px', background: `${accent}20`, color: accent, fontFamily: 'JetBrains Mono, monospace' }}>{count}</span>
+      </div>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>{children}</div>
+    </div>
+  );
+}
+
+function CmpModRow({
+  mod, accent, badge, versionId, expanded, onToggle, changelog,
+}: {
+  mod: CmpMod; accent: string; badge?: React.ReactNode;
+  versionId: string; expanded: boolean;
+  onToggle: () => void;
+  changelog: string | null | 'loading' | undefined;
+}) {
+  const [imgErr, setImgErr] = useState(false);
+  return (
+    <div style={{
+      borderRadius: '9px', overflow: 'hidden',
+      border: `1px solid ${expanded ? accent + '50' : 'var(--card-border)'}`,
+      transition: 'border-color 0.14s',
+    }}>
+      {/* Header row */}
+      <div
+        onClick={onToggle}
+        style={{
+          display: 'flex', alignItems: 'center', gap: '10px',
+          padding: '8px 10px',
+          background: expanded ? `${accent}0a` : 'var(--card)',
+          cursor: 'pointer', userSelect: 'none',
+          transition: 'background 0.14s',
+        }}
+        onMouseEnter={e => { if (!expanded) (e.currentTarget as HTMLElement).style.background = 'var(--card-hover)'; }}
+        onMouseLeave={e => { if (!expanded) (e.currentTarget as HTMLElement).style.background = 'var(--card)'; }}
+      >
+        {mod.iconUrl && !imgErr
+          ? <img src={mod.iconUrl} width="24" height="24" alt="" onError={() => setImgErr(true)}
+              style={{ borderRadius: '5px', objectFit: 'cover', flexShrink: 0 }} />
+          : <div style={{ width: 24, height: 24, borderRadius: '5px', background: 'var(--card-border)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+              <Package size={12} color="var(--text-3)" />
+            </div>
+        }
+        <span style={{ fontSize: '13px', fontWeight: 600, color: 'var(--text)', fontFamily: 'Instrument Sans, sans-serif', flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+          {mod.name}
+        </span>
+        {badge}
+        <ChevronDown size={13} color="var(--text-3)" style={{ flexShrink: 0, transform: expanded ? 'rotate(180deg)' : 'rotate(0deg)', transition: 'transform 0.2s ease' }} />
+      </div>
+
+      {/* Changelog panel */}
+      <AnimatePresence>
+        {expanded && (
+          <motion.div
+            initial={{ height: 0, opacity: 0 }}
+            animate={{ height: 'auto', opacity: 1 }}
+            exit={{ height: 0, opacity: 0 }}
+            transition={{ duration: 0.18, ease: 'easeInOut' }}
+            style={{ overflow: 'hidden' }}
+          >
+            <div style={{ padding: '14px 14px 12px', borderTop: `1px solid ${accent}28`, background: `${accent}06` }}>
+              {changelog === 'loading' ? (
+                <div style={{ display: 'flex', alignItems: 'center', gap: '7px' }}>
+                  <Loader2 size={12} color="var(--text-3)" style={{ animation: 'spin 0.8s linear infinite' }} />
+                  <span style={{ fontSize: '12px', color: 'var(--text-3)', fontFamily: 'Instrument Sans, sans-serif' }}>Loading changelog…</span>
+                </div>
+              ) : changelog ? (
+                <div style={{ fontSize: '13px', color: 'var(--text-2)', lineHeight: 1.65 }}>
+                  <MarkdownBody content={changelog} accent={accent} />
+                </div>
+              ) : (
+                <p style={{ fontSize: '12px', color: 'var(--text-3)', fontFamily: 'Instrument Sans, sans-serif', fontStyle: 'italic' }}>No changelog provided for this version.</p>
+              )}
+              <a
+                href={`https://modrinth.com/mod/${mod.projectId}/version/${versionId}`}
+                target="_blank" rel="noopener noreferrer"
+                style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', marginTop: '10px', fontSize: '11px', color: accent, textDecoration: 'none', fontFamily: 'Instrument Sans, sans-serif', fontWeight: 600 }}
+              >
+                <ExternalLink size={10} />
+                View version on Modrinth
+              </a>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </div>
+  );
+}
+
 export function ModDetail({ hit, onClose, contextType, mode = 'modal', cfData }: ModDetailProps) {
   const navigate = useNavigate();
   const [versions, setVersions]       = useState<Version[]>([]);
@@ -292,14 +434,26 @@ export function ModDetail({ hit, onClose, contextType, mode = 'modal', cfData }:
   const [selectedLoader, setSelectedLoader]       = useState('');
   const [showSnapshots, setShowSnapshots]         = useState(false);
 
-  const [activeTab, setActiveTab]   = useState<'about' | 'screenshots' | 'versions'>('about');
+  const [activeTab, setActiveTab]   = useState<'about' | 'screenshots' | 'versions' | 'compare'>('about');
   const [vTabMc, setVTabMc]         = useState('');
   const [vTabLoader, setVTabLoader] = useState('');
   const [vTabTypes, setVTabTypes]   = useState(['release', 'beta', 'alpha']);
   const [vTabSearch, setVTabSearch] = useState('');
 
+  // Compare tab state
+  const [cmpA, setCmpA]                   = useState('');
+  const [cmpB, setCmpB]                   = useState('');
+  const [cmpLoading, setCmpLoading]       = useState(false);
+  const [cmpResult, setCmpResult]         = useState<CompareResult | null>(null);
+  const [cmpError, setCmpError]           = useState(false);
+  const [expandedCmpMod, setExpandedCmpMod] = useState<string | null>(null);
+  const [cmpChangelogs, setCmpChangelogs]   = useState<Map<string, string | null | 'loading'>>(new Map());
+
   const [teamMembers, setTeamMembers]   = useState<TeamMember[]>([]);
   const [projectOrgId, setProjectOrgId] = useState<string | null>(null);
+  const [orgInfo, setOrgInfo]           = useState<{ name: string; iconUrl: string | null } | null>(null);
+  const [disclosures, setDisclosures]   = useState<Disclosure[]>([]);
+  const [showAllDeps, setShowAllDeps]   = useState(false);
 
   // CF-specific state
   const [cfDlMcVersion, setCfDlMcVersion] = useState('');
@@ -316,8 +470,10 @@ export function ModDetail({ hit, onClose, contextType, mode = 'modal', cfData }:
     setCfDlMcVersion(''); setCfDlLoader('');
     setProjectBody(null); setTranslatedDesc(null); setTranslatedBody(null);
     setDeps([]); setGalleryMeta([]); setProjectLinks(null);
-    setTeamMembers([]); setProjectOrgId(null);
+    setTeamMembers([]); setProjectOrgId(null); setOrgInfo(null); setDisclosures([]); setShowAllDeps(false);
     setActiveTab('about'); setExpandedVersion(null);
+    setCmpA(''); setCmpB(''); setCmpResult(null); setCmpError(false); setCmpLoading(false);
+    setExpandedCmpMod(null); setCmpChangelogs(new Map());
 
     if (cfData) {
       setGalleryMeta(cfData.screenshots.map(s => ({
@@ -344,6 +500,14 @@ export function ModDetail({ hit, onClose, contextType, mode = 'modal', cfData }:
       setProjectLinks(links);
       setProjectOrgId(organization);
       setTeamMembers(members.filter(m => m.accepted));
+      if (organization) {
+        axios.get(`https://api.modrinth.com/v3/organization/${organization}`, {
+          headers: { 'User-Agent': 'BetterModrinth/1.0 (kokocanfixit@gmail.com)' },
+        }).then(r => setOrgInfo({ name: r.data.name, iconUrl: r.data.icon_url ?? null })).catch(() => {});
+      }
+      axios.get(`https://api.modrinth.com/v3/project/${hit.slug}/disclosures`, {
+        headers: { 'User-Agent': 'BetterModrinth/1.0 (kokocanfixit@gmail.com)' },
+      }).then(r => setDisclosures(r.data.disclosures ?? [])).catch(() => {});
 
       const seen = new Set<string>();
       const uniqueDeps: Dependency[] = [];
@@ -516,6 +680,91 @@ export function ModDetail({ hit, onClose, contextType, mode = 'modal', cfData }:
 
   const gallery = cfData ? cfData.screenshots.map(s => s.url) : (hit.gallery ?? []);
 
+  // ── Modpack compare ───────────────────────────────────────────────
+  const runCompare = async () => {
+    if (!cmpA || !cmpB || cmpA === cmpB) return;
+    setCmpLoading(true);
+    setCmpResult(null);
+    setCmpError(false);
+    try {
+      const vA = versions.find(v => v.id === cmpA)!;
+      const vB = versions.find(v => v.id === cmpB)!;
+      const fA = vA.files.find(f => f.primary) ?? vA.files[0];
+      const fB = vB.files.find(f => f.primary) ?? vB.files[0];
+
+      const [entriesA, entriesB] = await Promise.all([
+        parseMrpackEntries(fA.url),
+        parseMrpackEntries(fB.url),
+      ]);
+
+      const mapA = new Map(entriesA.map(e => [e.projectId, e]));
+      const mapB = new Map(entriesB.map(e => [e.projectId, e]));
+
+      const addedIds   = [...mapB.keys()].filter(id => !mapA.has(id));
+      const removedIds = [...mapA.keys()].filter(id => !mapB.has(id));
+      const updatedIds = [...mapB.keys()].filter(
+        id => mapA.has(id) && mapA.get(id)!.versionId !== mapB.get(id)!.versionId,
+      );
+
+      const allProjectIds = [...new Set([...addedIds, ...removedIds, ...updatedIds])];
+      const allVersionIds = [...new Set([
+        ...updatedIds.map(id => mapA.get(id)!.versionId),
+        ...updatedIds.map(id => mapB.get(id)!.versionId),
+      ])];
+
+      const [projectsResp, versionsResp] = await Promise.all([
+        allProjectIds.length
+          ? modrinthV2.get(`/projects?ids=${encodeURIComponent(JSON.stringify(allProjectIds))}`)
+          : Promise.resolve({ data: [] }),
+        allVersionIds.length
+          ? modrinthV2.get(`/versions?ids=${encodeURIComponent(JSON.stringify(allVersionIds))}`)
+          : Promise.resolve({ data: [] }),
+      ]);
+
+      const projectMap = new Map<string, { name: string; iconUrl: string | null }>(
+        (projectsResp.data as { id: string; title: string; icon_url: string | null }[])
+          .map(p => [p.id, { name: p.title, iconUrl: p.icon_url }]),
+      );
+      const verNumMap = new Map<string, string>(
+        (versionsResp.data as { id: string; version_number: string }[])
+          .map(v => [v.id, v.version_number]),
+      );
+
+      const toMod = (id: string, versionId: string): CmpMod => {
+        const info = projectMap.get(id);
+        return { projectId: id, name: info?.name ?? id, iconUrl: info?.iconUrl ?? null, versionId };
+      };
+
+      setCmpResult({
+        added:   addedIds.map(id => toMod(id, mapB.get(id)!.versionId)),
+        removed: removedIds.map(id => toMod(id, mapA.get(id)!.versionId)),
+        updated: updatedIds.map(id => ({
+          ...toMod(id, mapB.get(id)!.versionId),
+          fromVersion: verNumMap.get(mapA.get(id)!.versionId) ?? mapA.get(id)!.versionId.slice(0, 8),
+          toVersion:   verNumMap.get(mapB.get(id)!.versionId) ?? mapB.get(id)!.versionId.slice(0, 8),
+        })),
+      });
+    } catch {
+      setCmpError(true);
+    } finally {
+      setCmpLoading(false);
+    }
+  };
+
+  const toggleCmpMod = async (projectId: string, versionId: string) => {
+    if (expandedCmpMod === projectId) { setExpandedCmpMod(null); return; }
+    setExpandedCmpMod(projectId);
+    if (!cmpChangelogs.has(projectId)) {
+      setCmpChangelogs(m => new Map(m).set(projectId, 'loading'));
+      try {
+        const { data } = await modrinthV2.get(`/version/${versionId}`);
+        setCmpChangelogs(m => new Map(m).set(projectId, (data.changelog as string | null) || null));
+      } catch {
+        setCmpChangelogs(m => new Map(m).set(projectId, null));
+      }
+    }
+  };
+
   // ── JSX sections ──────────────────────────────────────────────────
 
   const translateBtn = !translating && !translatedDesc && (
@@ -578,7 +827,13 @@ export function ModDetail({ hit, onClose, contextType, mode = 'modal', cfData }:
   const bodySection = cfData ? (
     <div style={{ background: 'var(--card)', border: '1px solid var(--card-border)', borderRadius: '12px', padding: '16px', marginBottom: '22px' }}>
       {cfData.descriptionHtml
-        ? <div className="cf-description" style={{ fontSize: '14px', color: 'var(--text-2)', lineHeight: 1.75 }} dangerouslySetInnerHTML={{ __html: sanitizeCfHtml(cfData.descriptionHtml) }} />
+        ? <div className="cf-description" style={{ fontSize: '14px', color: 'var(--text-2)', lineHeight: 1.75 }}>
+            {parseYouTubeParts(cfData.descriptionHtml).map((part, i) =>
+              part.type === 'youtube'
+                ? <YouTubeEmbed key={i} videoId={part.videoId} />
+                : <div key={i} dangerouslySetInnerHTML={{ __html: sanitizeCfHtml(part.content) }} />
+            )}
+          </div>
         : <p style={{ fontSize: '14px', color: 'var(--text-2)', lineHeight: 1.65 }}>{hit.description}</p>}
     </div>
   ) : (
@@ -841,8 +1096,18 @@ export function ModDetail({ hit, onClose, contextType, mode = 'modal', cfData }:
     <div style={{ marginBottom: '18px' }}>
       <SectionTitle icon={<Package size={12} />}>Dependencies ({deps.length})</SectionTitle>
       <div style={{ display: 'flex', flexDirection: 'column', gap: '5px' }}>
-        {deps.map(d => <DepCard key={d.project.id} info={d} />)}
+        {(showAllDeps ? deps : deps.slice(0, 5)).map(d => <DepCard key={d.project.id} info={d} />)}
       </div>
+      {deps.length > 5 && (
+        <button
+          onClick={() => setShowAllDeps(s => !s)}
+          style={{ marginTop: '6px', width: '100%', padding: '6px', background: 'none', border: '1px solid var(--card-border)', borderRadius: '8px', cursor: 'pointer', fontSize: '11px', color: 'var(--text-3)', fontFamily: 'Instrument Sans, sans-serif', fontWeight: 600, transition: 'all 0.14s' }}
+          onMouseEnter={e => { (e.currentTarget as HTMLElement).style.color = 'var(--text-2)'; (e.currentTarget as HTMLElement).style.borderColor = 'var(--card-border-hover)'; }}
+          onMouseLeave={e => { (e.currentTarget as HTMLElement).style.color = 'var(--text-3)'; (e.currentTarget as HTMLElement).style.borderColor = 'var(--card-border)'; }}
+        >
+          {showAllDeps ? `Show less` : `Show ${deps.length - 5} more…`}
+        </button>
+      )}
     </div>
   ) : null;
 
@@ -948,6 +1213,64 @@ export function ModDetail({ hit, onClose, contextType, mode = 'modal', cfData }:
     </div>
   ) : null;
 
+  const DISCLOSURE_META: Record<string, { label: string; color: string; icon: React.ReactNode }> = {
+    paid_features:       { label: 'Paid Features',        color: '#f59e0b', icon: <CreditCard size={12} /> },
+    telemetry:           { label: 'Telemetry',            color: '#f43f5e', icon: <Radio size={12} /> },
+    ai_content:          { label: 'AI-Generated Content', color: '#a78bfa', icon: <Bot size={12} /> },
+    system_interactions: { label: 'System Access',        color: '#60a5fa', icon: <Monitor size={12} /> },
+  };
+  const CONSENT_LABEL: Record<string, string> = {
+    always_active: 'Always active',
+    opt_out:       'Opt-out',
+    opt_in:        'Opt-in',
+  };
+
+  const disclosuresSection = !cfData && disclosures.length > 0 ? (
+    <div style={{ background: 'var(--card)', border: '1px solid var(--card-border)', borderRadius: '14px', padding: '14px 16px', marginBottom: '18px' }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '10px' }}>
+        <AlertTriangle size={13} color="var(--text-3)" />
+        <span style={{ fontSize: '11px', fontWeight: 700, letterSpacing: '0.07em', textTransform: 'uppercase', color: 'var(--text-3)', fontFamily: 'JetBrains Mono, monospace' }}>Disclosures</span>
+      </div>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+        {disclosures.map((d, i) => {
+          const meta = DISCLOSURE_META[d.type] ?? { label: d.type, color: 'var(--text-3)', icon: <AlertTriangle size={12} /> };
+          const rows: { label: string; value: string }[] = [];
+
+          if (d.type === 'paid_features' && d.features.length > 0) {
+            rows.push({ label: 'Features', value: d.features.join(', ') });
+          }
+          if (d.type === 'telemetry') {
+            rows.push({ label: 'Consent', value: CONSENT_LABEL[d.consent] ?? d.consent });
+            if (d.data_collected.length > 0) rows.push({ label: 'Collects', value: d.data_collected.join(', ') });
+          }
+          if (d.type === 'ai_content') {
+            if (d.uses.length > 0) rows.push({ label: 'Used for', value: d.uses.map(u => u.charAt(0).toUpperCase() + u.slice(1)).join(', ') });
+            if (d.note) rows.push({ label: 'Note', value: d.note });
+          }
+          if (d.type === 'system_interactions') {
+            if (d.note) rows.push({ label: 'Note', value: d.note });
+            if (d.interactions.length > 0) rows.push({ label: 'Access', value: d.interactions.join(', ') });
+          }
+
+          return (
+            <div key={i} style={{ padding: '9px 11px', borderRadius: '9px', background: `${meta.color}0d`, border: `1px solid ${meta.color}28` }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: rows.length ? '6px' : 0 }}>
+                <span style={{ color: meta.color, display: 'flex', alignItems: 'center' }}>{meta.icon}</span>
+                <span style={{ fontSize: '12px', fontWeight: 700, color: meta.color, fontFamily: 'Instrument Sans, sans-serif' }}>{meta.label}</span>
+              </div>
+              {rows.map(row => (
+                <div key={row.label} style={{ display: 'flex', gap: '6px', fontSize: '11px', fontFamily: 'Instrument Sans, sans-serif', lineHeight: 1.5 }}>
+                  <span style={{ color: 'var(--text-3)', minWidth: '52px', flexShrink: 0 }}>{row.label}</span>
+                  <span style={{ color: 'var(--text-2)' }}>{row.value}</span>
+                </div>
+              ))}
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  ) : null;
+
   const sortedMembers = [...teamMembers].sort((a, b) => {
     const aOwner = a.role.toLowerCase() === 'owner';
     const bOwner = b.role.toLowerCase() === 'owner';
@@ -997,14 +1320,17 @@ export function ModDetail({ hit, onClose, contextType, mode = 'modal', cfData }:
             onMouseEnter={e => { (e.currentTarget as HTMLElement).style.background = 'var(--card-hover)'; }}
             onMouseLeave={e => { (e.currentTarget as HTMLElement).style.background = 'transparent'; }}
           >
-            <div style={{ width: '28px', height: '28px', borderRadius: '8px', flexShrink: 0, background: `${accentHex}14`, border: `1px solid ${accentHex}28`, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-              <Building2 size={13} color={accentHex} />
+            <div style={{ width: '28px', height: '28px', borderRadius: '8px', flexShrink: 0, overflow: 'hidden', background: `${accentHex}14`, border: `1px solid ${accentHex}28`, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+              {orgInfo?.iconUrl
+                ? <img src={orgInfo.iconUrl} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                : <Building2 size={13} color={accentHex} />
+              }
             </div>
             <div style={{ flex: 1, minWidth: 0 }}>
               <div style={{ fontSize: '13px', fontWeight: 600, color: 'var(--text)', fontFamily: 'Instrument Sans, sans-serif', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                Organization
+                {orgInfo?.name ?? 'Organization'}
               </div>
-              <div style={{ fontSize: '11px', color: 'var(--text-3)', fontFamily: 'JetBrains Mono, monospace' }}>Owner</div>
+              <div style={{ fontSize: '11px', color: 'var(--text-3)', fontFamily: 'JetBrains Mono, monospace' }}>Organization</div>
             </div>
             <ExternalLink size={11} color="var(--text-3)" style={{ flexShrink: 0 }} />
           </button>
@@ -1517,11 +1843,131 @@ export function ModDetail({ hit, onClose, contextType, mode = 'modal', cfData }:
     </div>
   );
 
+  // ── Compare tab content ───────────────────────────────────────────
+  const isModpack = !cfData && hit.project_type === 'modpack';
+
+  const compareTabContent = isModpack ? (
+    <div style={{ maxWidth: '740px' }}>
+      {/* Selectors */}
+      <div style={{ display: 'flex', gap: '12px', marginBottom: '20px', alignItems: 'flex-end', flexWrap: 'wrap' }}>
+        <div style={{ flex: 1, minWidth: '180px' }}>
+          <p style={{ fontSize: '10px', fontWeight: 600, letterSpacing: '0.07em', textTransform: 'uppercase', color: 'var(--text-3)', marginBottom: '6px', fontFamily: 'JetBrains Mono, monospace' }}>From</p>
+          <Dropdown
+            options={versions.map(v => ({
+              value: v.id,
+              label: `${v.version_number}${v.name !== v.version_number ? ` — ${v.name}` : ''}`,
+            }))}
+            value={cmpA} onChange={v => { setCmpA(v as string); setCmpResult(null); setCmpError(false); }}
+            placeholder="Select version…" searchable
+          />
+        </div>
+        <div style={{ flex: 1, minWidth: '180px' }}>
+          <p style={{ fontSize: '10px', fontWeight: 600, letterSpacing: '0.07em', textTransform: 'uppercase', color: 'var(--text-3)', marginBottom: '6px', fontFamily: 'JetBrains Mono, monospace' }}>To</p>
+          <Dropdown
+            options={versions.map(v => ({
+              value: v.id,
+              label: `${v.version_number}${v.name !== v.version_number ? ` — ${v.name}` : ''}`,
+            }))}
+            value={cmpB} onChange={v => { setCmpB(v as string); setCmpResult(null); setCmpError(false); }}
+            placeholder="Select version…" searchable
+          />
+        </div>
+        <button
+          disabled={!cmpA || !cmpB || cmpA === cmpB || cmpLoading}
+          onClick={runCompare}
+          style={{
+            display: 'inline-flex', alignItems: 'center', gap: '6px',
+            padding: '8px 18px', borderRadius: '9px', border: 'none', cursor: (!cmpA || !cmpB || cmpA === cmpB || cmpLoading) ? 'not-allowed' : 'pointer',
+            background: (!cmpA || !cmpB || cmpA === cmpB) ? 'var(--card)' : `linear-gradient(135deg, ${accentHex}, ${accentHex}cc)`,
+            color: (!cmpA || !cmpB || cmpA === cmpB) ? 'var(--text-3)' : 'white',
+            fontSize: '13px', fontWeight: 700, fontFamily: 'Instrument Sans, sans-serif',
+            boxShadow: (!cmpA || !cmpB || cmpA === cmpB) ? 'none' : `0 2px 10px ${accentHex}40`,
+            transition: 'all 0.15s', opacity: cmpLoading ? 0.7 : 1, flexShrink: 0, alignSelf: 'flex-end',
+          }}
+        >
+          {cmpLoading
+            ? <Loader2 size={13} style={{ animation: 'spin 0.8s linear infinite' }} />
+            : <GitCompare size={13} />
+          }
+          {cmpLoading ? 'Comparing…' : 'Compare'}
+        </button>
+      </div>
+
+      {cmpA === cmpB && cmpA && (
+        <p style={{ fontSize: '13px', color: 'var(--text-3)', fontFamily: 'Instrument Sans, sans-serif' }}>Select two different versions to compare.</p>
+      )}
+
+      {cmpError && !cmpLoading && (
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '12px 14px', background: 'rgba(244,63,94,0.08)', border: '1px solid rgba(244,63,94,0.2)', borderRadius: '10px', marginBottom: '16px' }}>
+          <AlertTriangle size={14} color="#f43f5e" />
+          <span style={{ fontSize: '13px', color: '#f43f5e', fontFamily: 'Instrument Sans, sans-serif' }}>
+            Failed to load one or both versions. The files may not be available.
+          </span>
+        </div>
+      )}
+
+      {cmpResult && !cmpLoading && (
+        <>
+          {cmpResult.added.length === 0 && cmpResult.removed.length === 0 && cmpResult.updated.length === 0 ? (
+            <p style={{ fontSize: '13px', color: 'var(--text-3)', fontFamily: 'Instrument Sans, sans-serif' }}>No changes detected between these versions.</p>
+          ) : (
+            <>
+              {cmpResult.added.length > 0 && (
+                <CmpSection title="Added" icon={<Plus size={13} color="#1bca8e" />} accent="#1bca8e" count={cmpResult.added.length}>
+                  {cmpResult.added.map(mod => (
+                    <CmpModRow key={mod.projectId} mod={mod} accent="#1bca8e"
+                      versionId={mod.versionId}
+                      expanded={expandedCmpMod === mod.projectId}
+                      onToggle={() => toggleCmpMod(mod.projectId, mod.versionId)}
+                      changelog={cmpChangelogs.get(mod.projectId)}
+                    />
+                  ))}
+                </CmpSection>
+              )}
+              {cmpResult.removed.length > 0 && (
+                <CmpSection title="Removed" icon={<Minus size={13} color="#f43f5e" />} accent="#f43f5e" count={cmpResult.removed.length}>
+                  {cmpResult.removed.map(mod => (
+                    <CmpModRow key={mod.projectId} mod={mod} accent="#f43f5e"
+                      versionId={mod.versionId}
+                      expanded={expandedCmpMod === mod.projectId}
+                      onToggle={() => toggleCmpMod(mod.projectId, mod.versionId)}
+                      changelog={cmpChangelogs.get(mod.projectId)}
+                    />
+                  ))}
+                </CmpSection>
+              )}
+              {cmpResult.updated.length > 0 && (
+                <CmpSection title="Updated" icon={<RefreshCw size={13} color="#f59e0b" />} accent="#f59e0b" count={cmpResult.updated.length}>
+                  {cmpResult.updated.map(mod => (
+                    <CmpModRow key={mod.projectId} mod={mod} accent="#f59e0b"
+                      versionId={mod.versionId}
+                      expanded={expandedCmpMod === mod.projectId}
+                      onToggle={() => toggleCmpMod(mod.projectId, mod.versionId)}
+                      changelog={cmpChangelogs.get(mod.projectId)}
+                      badge={
+                        <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', flexShrink: 0 }}>
+                          <span style={{ fontSize: '10px', padding: '2px 6px', borderRadius: '4px', background: 'rgba(245,158,11,0.15)', color: '#f59e0b', fontFamily: 'JetBrains Mono, monospace', fontWeight: 600 }}>{mod.fromVersion}</span>
+                          <span style={{ fontSize: '10px', color: 'var(--text-3)' }}>→</span>
+                          <span style={{ fontSize: '10px', padding: '2px 6px', borderRadius: '4px', background: 'rgba(27,202,142,0.15)', color: '#1bca8e', fontFamily: 'JetBrains Mono, monospace', fontWeight: 600 }}>{mod.toVersion}</span>
+                        </span>
+                      }
+                    />
+                  ))}
+                </CmpSection>
+              )}
+            </>
+          )}
+        </>
+      )}
+    </div>
+  ) : null;
+
   // ── Tab bar ───────────────────────────────────────────────────────
-  const tabs: { id: 'about' | 'screenshots' | 'versions'; label: string }[] = [
+  const tabs: { id: 'about' | 'screenshots' | 'versions' | 'compare'; label: string }[] = [
     { id: 'about',    label: 'About' },
     ...(gallery.length > 0 ? [{ id: 'screenshots' as const, label: `Screenshots (${gallery.length})` }] : []),
     { id: 'versions', label: cfData ? `Files (${cfData.files.length})` : `Versions${versions.length ? ` (${versions.length})` : ''}` },
+    ...(isModpack ? [{ id: 'compare' as const, label: 'Compare' }] : []),
   ];
 
   const tabBar = (
@@ -1574,7 +2020,13 @@ export function ModDetail({ hit, onClose, contextType, mode = 'modal', cfData }:
               </h3>
               {cfData ? (
                 cfData.descriptionHtml
-                  ? <div className="cf-description" style={{ fontSize: '14px', color: 'var(--text-2)', lineHeight: 1.75 }} dangerouslySetInnerHTML={{ __html: sanitizeCfHtml(cfData.descriptionHtml) }} />
+                  ? <div className="cf-description" style={{ fontSize: '14px', color: 'var(--text-2)', lineHeight: 1.75 }}>
+            {parseYouTubeParts(cfData.descriptionHtml).map((part, i) =>
+              part.type === 'youtube'
+                ? <YouTubeEmbed key={i} videoId={part.videoId} />
+                : <div key={i} dangerouslySetInnerHTML={{ __html: sanitizeCfHtml(part.content) }} />
+            )}
+          </div>
                   : <p style={{ fontSize: '14px', color: 'var(--text-2)', lineHeight: 1.75 }}>{hit.description}</p>
               ) : (
                 <>
@@ -1592,6 +2044,7 @@ export function ModDetail({ hit, onClose, contextType, mode = 'modal', cfData }:
               )}
             </div>
           ) : activeTab === 'screenshots' ? screenshotsTabContent
+          : activeTab === 'compare' ? compareTabContent
           : versionsTabContent}
         </div>
       </div>
@@ -1606,6 +2059,7 @@ export function ModDetail({ hit, onClose, contextType, mode = 'modal', cfData }:
         {environmentSection}
         {downloadSection}
         {linksSection}
+        {disclosuresSection}
         {developersSection}
         {dependenciesSection}
         {categoriesSection}

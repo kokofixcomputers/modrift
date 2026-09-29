@@ -1,12 +1,16 @@
 import { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
-import { Loader2, Package, Download, Calendar, ArrowLeft } from 'lucide-react';
+import { Loader2, Package, Download, Calendar, ArrowLeft, Building2, Users } from 'lucide-react';
 import axios from 'axios';
 import { formatDownloads, formatDate } from '../api/modrinth';
 
 const api = axios.create({
   baseURL: 'https://api.modrinth.com/v2',
+  headers: { 'User-Agent': 'BetterModrinth/1.0 (kokocanfixit@gmail.com)' },
+});
+const apiV3 = axios.create({
+  baseURL: 'https://api.modrinth.com/v3',
   headers: { 'User-Agent': 'BetterModrinth/1.0 (kokocanfixit@gmail.com)' },
 });
 
@@ -15,6 +19,52 @@ interface UserProject {
   project_type: string; downloads: number; follows: number;
   status: string; date_modified: string; color: number | null;
   client_side: string; server_side: string;
+}
+
+interface UserOrg {
+  id: string; slug: string; name: string; description: string;
+  icon_url: string | null; member_count: number;
+}
+
+function OrgCard({ org }: { org: UserOrg }) {
+  const navigate = useNavigate();
+  const [imgErr, setImgErr] = useState(false);
+  return (
+    <motion.button
+      whileHover={{ y: -1 }}
+      transition={{ duration: 0.13 }}
+      onClick={() => navigate(`/org/${org.id}`)}
+      style={{
+        display: 'flex', alignItems: 'center', gap: '14px',
+        padding: '12px 16px', borderRadius: '12px', cursor: 'pointer',
+        background: 'var(--card)', border: '1px solid var(--card-border)',
+        textAlign: 'left', width: '100%', transition: 'border-color 0.15s',
+        boxShadow: '0 2px 8px rgba(0,0,0,0.2)',
+      }}
+      onMouseEnter={e => { (e.currentTarget as HTMLElement).style.borderColor = 'var(--card-border-hover)'; }}
+      onMouseLeave={e => { (e.currentTarget as HTMLElement).style.borderColor = 'var(--card-border)'; }}
+    >
+      <div style={{ width: '40px', height: '40px', borderRadius: '10px', flexShrink: 0, overflow: 'hidden', background: 'var(--accent-dim)', border: '1px solid var(--accent-border)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+        {org.icon_url && !imgErr
+          ? <img src={org.icon_url} alt={org.name} onError={() => setImgErr(true)} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+          : <Building2 size={18} color="var(--accent)" />
+        }
+      </div>
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <div style={{ fontSize: '14px', fontWeight: 700, color: 'var(--text)', fontFamily: 'Instrument Sans, sans-serif', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', marginBottom: '2px' }}>
+          {org.name}
+        </div>
+        {org.description && (
+          <p style={{ fontSize: '12px', color: 'var(--text-3)', fontFamily: 'Instrument Sans, sans-serif', margin: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+            {org.description}
+          </p>
+        )}
+      </div>
+      <div style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '11px', color: 'var(--text-3)', fontFamily: 'JetBrains Mono, monospace', flexShrink: 0 }}>
+        <Users size={11} />{org.member_count}
+      </div>
+    </motion.button>
+  );
 }
 
 function getEnvLabel(c: string, s: string): string | null {
@@ -99,6 +149,7 @@ export default function UserPage() {
   const navigate = useNavigate();
   const [user, setUser] = useState<any>(null);
   const [projects, setProjects] = useState<UserProject[]>([]);
+  const [orgs, setOrgs] = useState<UserOrg[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(false);
 
@@ -106,12 +157,14 @@ export default function UserPage() {
     if (!username) return;
     setLoading(true);
     setError(false);
+    setOrgs([]);
     Promise.all([
       api.get(`/user/${username}`),
       api.get(`/user/${username}/projects`),
     ]).then(([u, p]) => {
       setUser(u.data);
       setProjects(p.data);
+      apiV3.get(`/user/${username}/organizations`).then(r => setOrgs(r.data)).catch(() => {});
     }).catch(() => setError(true)).finally(() => setLoading(false));
   }, [username]);
 
@@ -197,6 +250,18 @@ export default function UserPage() {
           Modrinth
         </a>
       </div>
+
+      {/* Organizations */}
+      {orgs.length > 0 && (
+        <div style={{ marginBottom: '36px' }}>
+          <div style={{ fontSize: '11px', fontWeight: 700, letterSpacing: '0.07em', textTransform: 'uppercase', color: 'var(--text-3)', fontFamily: 'JetBrains Mono, monospace', marginBottom: '12px' }}>
+            Organizations ({orgs.length})
+          </div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+            {orgs.map(org => <OrgCard key={org.id} org={org} />)}
+          </div>
+        </div>
+      )}
 
       {/* Projects */}
       {projects.length === 0 ? (
